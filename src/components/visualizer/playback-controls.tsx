@@ -71,7 +71,7 @@ export function PlaybackControls({
             size="icon"
             onClick={onPlayPause}
             disabled={totalSteps === 0}
-            className="h-10 w-10 rounded-full bg-foreground hover:bg-foreground/90"
+            className="h-10 w-10 rounded-full "
             title={isPlaying ? 'Pause' : 'Play'}
           >
             <motion.span
