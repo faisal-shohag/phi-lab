@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { javascript } from '@codemirror/lang-javascript'
 import { linter, type Diagnostic } from '@codemirror/lint'
@@ -9,14 +9,15 @@ import {
   type DecorationSet,
   EditorView,
   GutterMarker,
+  ViewPlugin,
+  type ViewUpdate,
   WidgetType,
   gutter,
   keymap,
 } from '@codemirror/view'
-import { type EditorState, type Extension, Prec, StateEffect, StateField } from '@codemirror/state'
+import { Compartment, type EditorState, type Extension, Prec, StateEffect, StateField } from '@codemirror/state'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { tags as t } from '@lezer/highlight'
-import { useTheme } from 'next-themes'
 import { getParseError } from '@/lib/visualizer/interpreter'
 import type { StepKind } from '@/lib/visualizer/types'
 
@@ -99,15 +100,15 @@ function buildHighlightDeco(state: EditorState, h: EditorHighlight | null): Deco
   if (h.callLine && h.callLine >= 1 && h.callLine <= lines && h.callLine !== h.activeLine) {
     ranges.push({ from: state.doc.line(h.callLine).from, deco: Decoration.line({ class: 'cm-callsite' }) })
   }
-  if (h.activeLine && h.activeLine >= 1 && h.activeLine <= lines) {
+  // The active-line background itself is drawn by execBarPlugin (a single
+  // persistent element that slides between lines); only the ghost widget is
+  // a decoration here.
+  if (h.activeLine && h.activeLine >= 1 && h.activeLine <= lines && h.ghostText) {
     const line = state.doc.line(h.activeLine)
-    ranges.push({ from: line.from, deco: Decoration.line({ class: `cm-exec cm-exec-${kindGroup(h.kind)}` }) })
-    if (h.ghostText) {
-      ranges.push({
-        from: line.to,
-        deco: Decoration.widget({ widget: new GhostWidget(h.ghostText, 'cm-ghost'), side: 1 }),
-      })
-    }
+    ranges.push({
+      from: line.to,
+      deco: Decoration.widget({ widget: new GhostWidget(h.ghostText, 'cm-ghost'), side: 1 }),
+    })
   }
   if (h.signatureText && fnStart && fnStart !== h.activeLine) {
     ranges.push({
@@ -132,6 +133,64 @@ const highlightField = StateField.define<DecorationSet>({
   },
   provide: (f) => EditorView.decorations.from(f),
 })
+
+// Raw highlight value, kept in state so the bar plugin can read it.
+const execHighlightState = StateField.define<EditorHighlight | null>({
+  create: () => null,
+  update(value, tr) {
+    for (const e of tr.effects) {
+      if (e.is(setHighlightEffect)) value = e.value
+    }
+    return value
+  },
+})
+
+// A single absolutely-positioned element behind the text that marks the
+// executing line. Because it is one persistent DOM node, CSS transitions
+// make it glide smoothly from line to line instead of jumping.
+const execBarPlugin = ViewPlugin.fromClass(
+  class {
+    bar: HTMLDivElement
+    constructor(readonly view: EditorView) {
+      this.bar = document.createElement('div')
+      this.bar.className = 'cm-exec-bar'
+      this.bar.style.opacity = '0'
+      view.scrollDOM.appendChild(this.bar)
+      view.requestMeasure({ read: () => this.position() })
+    }
+    update(u: ViewUpdate) {
+      if (
+        u.docChanged ||
+        u.geometryChanged ||
+        u.viewportChanged ||
+        u.transactions.some((tr) => tr.effects.some((e) => e.is(setHighlightEffect)))
+      ) {
+        u.view.requestMeasure({ read: () => this.position() })
+      }
+    }
+    position() {
+      const h = this.view.state.field(execHighlightState)
+      const ln = h?.activeLine
+      if (!ln || ln < 1 || ln > this.view.state.doc.lines) {
+        this.bar.style.opacity = '0'
+        return
+      }
+      const block = this.view.lineBlockAt(this.view.state.doc.line(ln).from)
+      const scroller = this.view.scrollDOM
+      const scrollRect = scroller.getBoundingClientRect()
+      const contentRect = this.view.contentDOM.getBoundingClientRect()
+      this.bar.className = `cm-exec-bar cm-exec-${kindGroup(h?.kind)}`
+      this.bar.style.opacity = '1'
+      this.bar.style.top = `${block.top + this.view.documentTop - scrollRect.top + scroller.scrollTop}px`
+      this.bar.style.height = `${block.height}px`
+      this.bar.style.left = `${contentRect.left - scrollRect.left + scroller.scrollLeft}px`
+      this.bar.style.width = `${contentRect.width}px`
+    }
+    destroy() {
+      this.bar.remove()
+    }
+  },
+)
 
 // ---------------------------------------------------------------------------
 // Breakpoint gutter
@@ -182,6 +241,7 @@ const baseTheme = EditorView.theme({
   '.cm-scroller': {
     fontFamily: 'var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
     lineHeight: '1.6',
+    position: 'relative',
   },
   '.cm-content': { paddingTop: '8px', paddingBottom: '8px' },
   '&.cm-focused': { outline: 'none' },
@@ -204,7 +264,15 @@ const baseTheme = EditorView.theme({
     opacity: '0.8',
     pointerEvents: 'none',
   },
-  '.cm-exec': { position: 'relative' },
+  '.cm-exec-bar': {
+    position: 'absolute',
+    zIndex: '-1',
+    pointerEvents: 'none',
+    borderRadius: '2px',
+    transition:
+      'top 0.22s cubic-bezier(0.4, 0, 0.2, 1), height 0.22s cubic-bezier(0.4, 0, 0.2, 1), ' +
+      'left 0.22s ease, width 0.22s ease, background-color 0.18s ease, box-shadow 0.18s ease, opacity 0.15s ease',
+  },
 })
 
 interface Palette {
@@ -309,6 +377,26 @@ const darkSyntax = HighlightStyle.define([
 const lightTheme: Extension = [execTheme(lightPalette, false), syntaxHighlighting(lightSyntax)]
 const darkTheme: Extension = [execTheme(darkPalette, true), syntaxHighlighting(darkSyntax)]
 
+// Theme lives in a compartment so switching light/dark reconfigures the live
+// editor in place — no re-creation, document and undo history untouched.
+const themeCompartment = new Compartment()
+
+// Watch the `dark` class on <html> directly: the theme can be flipped either
+// by next-themes or by AnimatedThemeToggler (which mutates the class without
+// going through next-themes), so useTheme() alone would miss changes.
+function useIsDarkClass(): boolean {
+  const [isDark, setIsDark] = useState(false)
+  useEffect(() => {
+    const root = document.documentElement
+    const update = () => setIsDark(root.classList.contains('dark'))
+    update()
+    const observer = new MutationObserver(update)
+    observer.observe(root, { attributes: true, attributeFilter: ['class'] })
+    return () => observer.disconnect()
+  }, [])
+  return isDark
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -323,7 +411,7 @@ export function CodeEditor({
   readOnly,
 }: CodeEditorProps) {
   const editorRef = useRef<ReactCodeMirrorRef>(null)
-  const { resolvedTheme } = useTheme()
+  const isDark = useIsDarkClass()
 
   const onRunRef = useRef(onRun)
   const onToggleBpRef = useRef(onToggleBreakpoint)
@@ -363,8 +451,28 @@ export function CodeEditor({
       ]),
     )
     /* eslint-enable react-hooks/refs */
-    return [javascript(), baseTheme, highlightField, breakpointsField, bpGutter, parseLinter, runKeymap]
+    return [
+      javascript(),
+      baseTheme,
+      themeCompartment.of([]),
+      highlightField,
+      execHighlightState,
+      execBarPlugin,
+      breakpointsField,
+      bpGutter,
+      parseLinter,
+      runKeymap,
+    ]
   }, [])
+
+  // Swap the light/dark palette in place when the app theme changes.
+  useEffect(() => {
+    const view = editorRef.current?.view
+    if (!view) return
+    view.dispatch({
+      effects: themeCompartment.reconfigure(isDark ? darkTheme : lightTheme),
+    })
+  }, [isDark])
 
   // Push the execution highlight into the editor and keep the active line
   // scrolled into view.
@@ -394,7 +502,7 @@ export function CodeEditor({
       readOnly={readOnly}
       height="100%"
       style={{ height: '100%' }}
-      theme={resolvedTheme === 'dark' ? darkTheme : lightTheme}
+      theme="none"
       extensions={extensions}
       basicSetup={{
         lineNumbers: true,
@@ -408,6 +516,7 @@ export function CodeEditor({
       onCreateEditor={(view) => {
         view.dispatch({
           effects: [
+            themeCompartment.reconfigure(isDark ? darkTheme : lightTheme),
             setHighlightEffect.of(highlight ?? null),
             setBreakpointsEffect.of(new Set(breakpoints)),
           ],

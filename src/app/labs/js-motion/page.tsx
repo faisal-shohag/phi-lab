@@ -377,74 +377,73 @@ export default function Home() {
   }, [trace, lastIndex, activeQuestion])
 
   // ---- Step description banner with expression breakdown ----
-  const stepBanner = (
+  // The amber container stays mounted; only its content crossfades between steps.
+  const stepBanner = currentStep && (
     <div className="shrink-0 min-h-16">
-      <AnimatePresence mode="wait">
-        {currentStep && (
+      <div className="rounded-xl border-2 border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-950/60 p-2.5 shadow-sm overflow-hidden">
+        <AnimatePresence mode="popLayout" initial={false}>
           <motion.div
             key={currentIndex}
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.25, ease: [0.4, 0.0, 0.2, 1] }}
-            className="rounded-xl border-2 border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-950/60 p-2.5 shadow-sm"
+            transition={{ duration: 0.2, ease: [0.4, 0.0, 0.2, 1] }}
+            className="flex items-center gap-3"
           >
-            <div className="flex items-center gap-3">
-              <div className="h-7 w-7 rounded-full bg-amber-500 dark:bg-amber-700 text-white flex items-center justify-center text-xs font-bold shrink-0">
-                {currentIndex + 1}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Badge variant="outline">{currentStep.kind}</Badge>
-                  <span className="text-[11px] text-muted-foreground hidden sm:inline">
-                    {KIND_DESCRIPTION[currentStep.kind]}
+            <div className="h-7 w-7 rounded-full bg-amber-500 dark:bg-amber-700 text-white flex items-center justify-center text-xs font-bold shrink-0">
+              {currentIndex + 1}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant="outline">{currentStep.kind}</Badge>
+                <span className="text-[11px] text-muted-foreground hidden sm:inline">
+                  {KIND_DESCRIPTION[currentStep.kind]}
+                </span>
+                {currentStep.conditionResult !== undefined && (
+                  <span className={cn(
+                    'inline-block px-1.5 py-0.5 rounded text-[10px] font-bold',
+                    currentStep.conditionResult ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white',
+                  )}>
+                    {currentStep.conditionResult ? 'TRUE' : 'FALSE'}
                   </span>
-                  {currentStep.conditionResult !== undefined && (
-                    <span className={cn(
-                      'inline-block px-1.5 py-0.5 rounded text-[10px] font-bold',
-                      currentStep.conditionResult ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white',
-                    )}>
-                      {currentStep.conditionResult ? 'TRUE' : 'FALSE'}
-                    </span>
-                  )}
-                  {currentStep.iteration !== undefined && (
-                    <span className="text-[10px] text-amber-800 dark:text-amber-300 font-mono">
-                      iter #{currentStep.iteration}
-                    </span>
-                  )}
-                </div>
-                {currentStep.exprTrail && currentStep.exprTrail.length > 1 ? (
-                  <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                    {currentStep.exprTrail.map((stage, i) => (
-                      <motion.span
-                        key={i}
-                        initial={{ opacity: 0, y: 4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: i * 0.18, duration: 0.2 }}
-                        className="flex items-center gap-1.5"
-                      >
-                        {i > 0 && <span className="text-amber-500">→</span>}
-                        <code className={cn(
-                          'font-mono text-[12px] px-1.5 py-0.5 rounded',
-                          i === currentStep.exprTrail!.length - 1
-                            ? 'bg-amber-500 text-white font-bold'
-                            : 'bg-amber-100 dark:bg-amber-900/50 text-amber-950 dark:text-amber-200',
-                        )}>
-                          {stage}
-                        </code>
-                      </motion.span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="font-mono text-[12px] mt-0.5 text-amber-950 dark:text-amber-300 wrap-break-word leading-snug">
-                    {currentStep.description}
-                  </p>
+                )}
+                {currentStep.iteration !== undefined && (
+                  <span className="text-[10px] text-amber-800 dark:text-amber-300 font-mono">
+                    iter #{currentStep.iteration}
+                  </span>
                 )}
               </div>
+              {currentStep.exprTrail && currentStep.exprTrail.length > 1 ? (
+                <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                  {currentStep.exprTrail.map((stage, i) => (
+                    <motion.span
+                      key={i}
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.18, duration: 0.2 }}
+                      className="flex items-center gap-1.5"
+                    >
+                      {i > 0 && <span className="text-amber-500">→</span>}
+                      <code className={cn(
+                        'font-mono text-[12px] px-1.5 py-0.5 rounded',
+                        i === currentStep.exprTrail!.length - 1
+                          ? 'bg-amber-500 text-white font-bold'
+                          : 'bg-amber-100 dark:bg-amber-900/50 text-amber-950 dark:text-amber-200',
+                      )}>
+                        {stage}
+                      </code>
+                    </motion.span>
+                  ))}
+                </div>
+              ) : (
+                <p className="font-mono text-[12px] mt-0.5 text-amber-950 dark:text-amber-300 wrap-break-word leading-snug">
+                  {currentStep.description}
+                </p>
+              )}
             </div>
           </motion.div>
-        )}
-      </AnimatePresence>
+        </AnimatePresence>
+      </div>
     </div>
   )
 
