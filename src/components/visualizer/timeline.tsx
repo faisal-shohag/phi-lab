@@ -20,6 +20,8 @@ const KIND_STYLE: Record<string, { bg: string; label: string }> = {
   return:      { bg: 'bg-teal-400',    label: 'ret' },
   output:      { bg: 'bg-slate-500',   label: 'log' },
   expr:        { bg: 'bg-slate-400',   label: 'expr' },
+  schedule:    { bg: 'bg-orange-500',  label: 'sched' },
+  dequeue:     { bg: 'bg-orange-400',  label: 'run' },
 }
 
 // Loop bookkeeping steps get thin ticks so long traces stay compact.
@@ -46,7 +48,7 @@ export function Timeline({ steps, currentIndex, onSeek, breakpointLines }: Timel
   }, [currentIndex])
 
   return (
-    <div ref={containerRef} className="relative flex items-stretch gap-[3px] overflow-x-auto py-2 px-1 h-11">
+    <div ref={containerRef} className="relative flex items-stretch gap-[3px] overflow-x-auto py-1 px-1 h-7">
       {steps.map((step, i) => {
         const style = KIND_STYLE[step.kind] ?? KIND_STYLE.expr
         const isCurrent = i === currentIndex

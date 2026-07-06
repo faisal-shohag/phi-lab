@@ -27,7 +27,7 @@ export function MemoryPanel({ step, heap, changed, indexPointers, barMode }: Mem
   const anyVars = frames.some((f) => f.vars.length > 0)
 
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex flex-col gap-2">
       {!anyVars && (
         <div className="text-sm text-muted-foreground italic text-center py-6">
           No variables yet — press <strong>Run</strong> to begin.
@@ -104,7 +104,7 @@ function FrameGroup({
         <span className={cn('text-[10px] text-muted-foreground', !isTop && 'ml-auto')}>#{depth}</span>
       </div>
       {frame.vars.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 px-2 pb-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 px-2 pb-2">
           <AnimatePresence mode="popLayout" initial={false}>
             {frame.vars.map((v) => {
               const arrPointers = indexPointers.get(v.name)

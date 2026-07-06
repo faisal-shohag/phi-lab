@@ -46,7 +46,7 @@ export function VariableCard({
       exit={{ opacity: 0, y: -6, scale: 0.97 }}
       transition={{ type: 'spring', stiffness: 220, damping: 26, mass: 0.8 }}
       className={cn(
-        'rounded-lg border-2 p-3',
+        'rounded-lg border-2 p-2',
         focused
           ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/60 dark:border-amber-600 shadow-lg shadow-amber-200/40 dark:shadow-amber-900/40'
           : 'border-border bg-card',
@@ -54,7 +54,7 @@ export function VariableCard({
         isClosure && !focused && 'border-dashed opacity-90',
       )}
     >
-      <div className="flex items-center gap-2 mb-1.5">
+      <div className="flex items-center gap-1.5 mb-1">
         <span className="text-xs font-mono font-bold text-foreground">{name}</span>
         <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{resolved.kind}</span>
         {isClosure && (
@@ -93,7 +93,7 @@ function PrimitiveValue({ value, recentlyChanged }: { value: Primitive; recently
       initial={recentlyChanged ? { scale: 1.15, color: 'rgb(245 158 11)' } : false}
       animate={{ scale: 1, color: undefined }}
       transition={{ type: 'spring', stiffness: 280, damping: 22, duration: 0.4 }}
-      className={cn('font-mono text-base font-semibold', primitiveColor(value))}
+      className={cn('font-mono text-sm font-semibold', primitiveColor(value))}
     >
       {display}
     </motion.div>
@@ -180,7 +180,7 @@ function ArrayValue({
             animate={{ scale: isFocused ? 1.12 : 1, opacity: 1 }}
             transition={{ type: 'spring', stiffness: 280, damping: 22, mass: 0.7 }}
             className={cn(
-              'flex flex-col items-center justify-center rounded-md border-2 px-2 py-1 min-w-10 font-mono',
+              'flex flex-col items-center justify-center rounded-md border-2 px-1.5 py-0.5 min-w-8 font-mono',
               isFocused
                 ? 'border-rose-500 bg-rose-100 dark:bg-rose-950/60 shadow-md shadow-rose-300/40'
                 : 'border-border bg-background',
@@ -189,7 +189,7 @@ function ArrayValue({
             <span className="text-[9px] text-muted-foreground leading-none mb-0.5">{i}</span>
             <span
               className={cn(
-                'text-sm font-bold leading-none',
+                'text-xs font-bold leading-none',
                 isNum ? 'text-sky-600 dark:text-sky-400'
                 : isBool ? 'text-fuchsia-600 dark:text-fuchsia-400'
                 : cell.t === 'prim' && (cell.v === null || cell.v === undefined) ? 'text-muted-foreground'
@@ -223,7 +223,7 @@ function ObjectValue({
     return <div className="text-xs text-muted-foreground italic">empty {'{ }'}</div>
   }
   return (
-    <div className="font-mono text-sm space-y-0.5">
+    <div className="font-mono text-xs space-y-0.5">
       {fields.map((f) => (
         <div
           key={f.key}

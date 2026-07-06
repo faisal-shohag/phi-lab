@@ -22,6 +22,9 @@ export interface HeapSnapshot {
   cells?: ValueSnapshot[]
   // For objects: one entry per field.
   fields?: { key: string; value: ValueSnapshot }[]
+  // For functions: variables captured from an enclosing scope (closure),
+  // resolved to their value at this moment. Drives the closure-capture view.
+  captures?: { name: string; value: string }[]
 }
 
 // A snapshot of a single variable at a point in time.
@@ -64,6 +67,8 @@ export type StepKind =
   | 'return'       // function return
   | 'output'       // console.log output produced
   | 'expr'         // generic expression evaluated
+  | 'schedule'     // an async callback was scheduled (setTimeout / microtask)
+  | 'dequeue'      // the event loop pulled a callback off a queue to run it
 
 // A single execution step. The UI advances through these one at a time.
 export interface Step {
@@ -105,6 +110,30 @@ export interface Step {
     // Heap id of the touched array/object (for the heap graph).
     heapId?: number
   }
+  // Event-loop snapshot: the synchronous call stack plus the pending queues at
+  // this moment. Only populated for traces that use async APIs.
+  async?: AsyncSnapshot
+}
+
+// A snapshot of the event loop at one step: what is on the call stack, what is
+// waiting in the browser's Web-API holding area (timers), and what is queued
+// as micro / macro tasks. Labels are short human-readable callback names.
+export interface AsyncSnapshot {
+  callStack: string[]
+  webApis: string[]
+  microtasks: string[]
+  macrotasks: string[]
+  // Which phase the event loop is in at this step.
+  phase: 'sync' | 'microtask' | 'macrotask'
+}
+
+// Result of the static "compile phase" pre-pass: what the engine hoists before
+// running the top-level code, and which let/const bindings sit in the Temporal
+// Dead Zone until their declaration executes.
+export interface HoistingInfo {
+  funcs: string[]
+  vars: string[]
+  tdz: { name: string; line: number; kind: 'let' | 'const' }[]
 }
 
 export interface Trace {
@@ -116,6 +145,10 @@ export interface Trace {
   // For each array variable: names of variables ever used to index into it
   // (drives the pointer markers in the array view).
   indexVars: Record<string, string[]>
+  // Static compile-phase summary (hoisting / TDZ) for the global scope.
+  hoisting?: HoistingInfo
+  // True when the trace scheduled at least one async callback.
+  hasAsync?: boolean
 }
 
 export interface ParseErrorInfo {

@@ -211,6 +211,40 @@ console.log(next());
 console.log(next());`,
   },
   {
+    id: 'event-loop',
+    title: 'Event Loop — Async Order',
+    description: 'sync vs microtask vs setTimeout. Turn on the Event loop feature.',
+    icon: 'timer',
+    code: `console.log("1: sync start");
+
+setTimeout(function timer() {
+  console.log("4: setTimeout (macrotask)");
+}, 0);
+
+Promise.resolve().then(function micro() {
+  console.log("3: promise (microtask)");
+});
+
+console.log("2: sync end");`,
+  },
+  {
+    id: 'hoisting',
+    title: 'Hoisting & TDZ',
+    description: 'Compile phase vs run phase. Turn on the Hoisting feature.',
+    icon: 'wand',
+    code: `greet();
+
+function greet() {
+  console.log("hoisted functions run fine");
+}
+
+var ready = true;
+let title = "TDZ demo";
+const version = 3;
+
+console.log(title + " v" + version);`,
+  },
+  {
     id: 'fizzbuzz',
     title: 'FizzBuzz',
     description: 'Classic modulo-and-branch warmup.',

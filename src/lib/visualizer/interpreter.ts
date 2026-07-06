@@ -14,8 +14,10 @@
 
 import { parse } from 'acorn'
 import type {
+  AsyncSnapshot,
   FrameSnapshot,
   HeapSnapshot,
+  HoistingInfo,
   ParseErrorInfo,
   Primitive,
   Step,
@@ -122,6 +124,25 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
     { name: 'global', kind: 'global', rootScope: globalScope, currentScope: globalScope },
   ]
 
+  // ---- event loop state ---------------------------------------------------
+  // A callback waiting to run, plus a short label for the queue visualization.
+  interface Task {
+    label: string
+    run: () => void
+  }
+  const microtaskQueue: Task[] = []
+  const macrotaskQueue: Task[] = []
+  // Timers still counting down inside the "Web APIs" holding area.
+  const webApiTimers: (Task & { delay: number })[] = []
+  let asyncPhase: AsyncSnapshot['phase'] = 'sync'
+  let usedAsync = false
+
+  function taskLabel(fn: unknown, prefix = ''): string {
+    const name = (fn as { __name?: string })?.__name
+    const base = name && name !== 'anonymous' ? name : 'callback'
+    return prefix ? `${prefix} ${base}` : base
+  }
+
   // For each array variable name: which variable names were used to index it.
   const indexVarsMap = new Map<string, Set<string>>()
   function noteIndexVar(objNode: any, propNode: any, computed: boolean) {
@@ -167,6 +188,50 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
   builtins.set('String', (v: RTValue) => formatValue(v))
   builtins.set('Number', (v: RTValue) => Number(v))
   builtins.set('Boolean', (v: RTValue) => Boolean(v))
+
+  // ---- async / event-loop builtins ----------------------------------------
+  // These do not run their callbacks now: they schedule them, and a small
+  // event loop (see runEventLoop) drains the queues after the synchronous code
+  // finishes — exactly like the browser.
+  builtins.set('setTimeout', (fn: RTValue, delay?: RTValue) => {
+    usedAsync = true
+    const ms = Number(delay) || 0
+    const label = taskLabel(fn)
+    if (typeof fn === 'function' && (fn as any).__userFn) {
+      webApiTimers.push({ label: `${label} · ${ms}ms`, delay: ms, run: () => callUserFn(fn, [], {}, label) })
+    }
+    pushStep({ kind: 'schedule', line: currentLine, description: `setTimeout → ${label}() after ${ms}ms (goes to Web APIs)` })
+    return webApiTimers.length
+  })
+  builtins.set('queueMicrotask', (fn: RTValue) => {
+    usedAsync = true
+    const label = taskLabel(fn)
+    if (typeof fn === 'function' && (fn as any).__userFn) {
+      microtaskQueue.push({ label, run: () => callUserFn(fn, [], {}, label) })
+    }
+    pushStep({ kind: 'schedule', line: currentLine, description: `queueMicrotask → ${label}() (microtask queue)` })
+    return undefined
+  })
+  // A minimal resolved-promise thenable: enough to demo micro-task ordering
+  // (Promise.resolve().then(...)). Chaining returns another resolved promise.
+  function makeResolvedPromise(value: RTValue): RTValue {
+    const p: { [k: string]: RTValue } = {}
+    p.__isPromise = true as unknown as RTValue
+    p.then = ((cb: RTValue) => {
+      usedAsync = true
+      const label = taskLabel(cb, '.then')
+      if (typeof cb === 'function' && (cb as any).__userFn) {
+        microtaskQueue.push({ label, run: () => callUserFn(cb, [value], {}, label) })
+      }
+      pushStep({ kind: 'schedule', line: currentLine, description: `Promise.then → ${taskLabel(cb)}() (microtask queue)` })
+      return makeResolvedPromise(undefined)
+    }) as unknown as RTValue
+    p.catch = (() => p) as unknown as RTValue
+    return p
+  }
+  builtins.set('Promise', {
+    resolve: (v: RTValue) => makeResolvedPromise(v),
+  })
 
   // Track the "current line" so console.log and helpers know what to report.
   let currentLine = 1
@@ -231,7 +296,13 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
       const o = queue[qi]
       const id = heapIdOf(o)
       if (typeof o === 'function') {
-        heap.push({ id, kind: 'function', label: (o as any).__name ?? 'fn' })
+        const captures = computeCaptures(o as any)
+        heap.push({
+          id,
+          kind: 'function',
+          label: (o as any).__name ?? 'fn',
+          captures: captures.length ? captures : undefined,
+        })
       } else if (Array.isArray(o)) {
         heap.push({ id, kind: 'array', cells: o.map((c) => toVS(c)) })
       } else {
@@ -248,6 +319,36 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
     return { frames, heap }
   }
 
+  // Resolve a function's captured (closure) variables to their current values.
+  // Free variables that resolve only in the global scope are NOT captures —
+  // closures capture from enclosing function / block scopes.
+  function computeCaptures(fn: { __freeVars?: string[]; __closure?: Scope }): { name: string; value: string }[] {
+    const names = fn.__freeVars
+    if (!names || !fn.__closure) return []
+    const out: { name: string; value: string }[] = []
+    for (const name of names) {
+      let s: Scope | null = fn.__closure
+      while (s && s !== globalScope) {
+        if (s.vars.has(name)) {
+          out.push({ name, value: formatValue(s.vars.get(name)) })
+          break
+        }
+        s = s.parent
+      }
+    }
+    return out
+  }
+
+  function asyncSnapshot(): AsyncSnapshot {
+    return {
+      callStack: callStack.map((a) => (a.kind === 'global' ? '(main)' : `${a.name}()`)),
+      webApis: webApiTimers.map((t) => t.label),
+      microtasks: microtaskQueue.map((t) => t.label),
+      macrotasks: macrotaskQueue.map((t) => t.label),
+      phase: asyncPhase,
+    }
+  }
+
   function pushStep(partial: Omit<Step, 'frames' | 'heap' | 'depth'>) {
     if (steps.length >= maxSteps) {
       throw new Error(
@@ -255,7 +356,9 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
       )
     }
     const { frames, heap } = snapshotState()
-    steps.push({ ...partial, frames, heap, depth: callStack.length - 1 })
+    const step: Step = { ...partial, frames, heap, depth: callStack.length - 1 }
+    if (usedAsync) step.async = asyncSnapshot()
+    steps.push(step)
   }
 
   // Run `fn` with the top frame's current scope set to `scope` (restored
@@ -756,6 +859,7 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
     fn.__exprBody = node.type === 'ArrowFunctionExpression' && node.body.type !== 'BlockStatement'
     fn.__name = node.id?.name ?? nameHint ?? 'anonymous'
     fn.__closure = scope
+    fn.__freeVars = collectFreeVars(node)
     fn.__loc = node.loc
       ? { line: node.loc.start.line, endLine: node.loc.end.line }
       : undefined
@@ -1210,23 +1314,152 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
     }
   }
 
+  // ---- event loop: drain queues after synchronous code finishes -----------
+  function drainMicrotasks() {
+    while (microtaskQueue.length) {
+      asyncPhase = 'microtask'
+      const t = microtaskQueue.shift()!
+      pushStep({ kind: 'dequeue', line: currentLine, description: `Event loop: run microtask ${t.label}` })
+      t.run()
+    }
+  }
+  if (usedAsync) {
+    drainMicrotasks()
+    while (webApiTimers.length || macrotaskQueue.length) {
+      if (macrotaskQueue.length === 0) {
+        // A timer expires: move the earliest-due one from Web APIs to the
+        // (macro)task queue, then the event loop can pick it up.
+        webApiTimers.sort((a, b) => a.delay - b.delay)
+        const timer = webApiTimers.shift()!
+        asyncPhase = 'macrotask'
+        macrotaskQueue.push({ label: timer.label.replace(/ · \d+ms$/, ''), run: timer.run })
+        pushStep({ kind: 'schedule', line: currentLine, description: `Timer fired: ${timer.label} moves to the task queue` })
+      }
+      asyncPhase = 'macrotask'
+      const t = macrotaskQueue.shift()!
+      pushStep({ kind: 'dequeue', line: currentLine, description: `Event loop: run task ${t.label}` })
+      t.run()
+      drainMicrotasks()
+    }
+    asyncPhase = 'sync'
+  }
+
   // Always add a final "done" step so the UI has a clean terminal frame.
   {
     const { frames, heap } = snapshotState()
-    steps.push({
+    const done: Step = {
       kind: 'expr',
       line: lines.length,
       description: 'Execution finished',
       frames,
       heap,
       depth: 0,
-    })
+    }
+    if (usedAsync) done.async = asyncSnapshot()
+    steps.push(done)
   }
 
   const indexVars: Record<string, string[]> = {}
   for (const [arr, set] of indexVarsMap) indexVars[arr] = [...set]
 
-  return { steps, lines, outputCount, indexVars }
+  return { steps, lines, outputCount, indexVars, hoisting: computeHoisting(ast), hasAsync: usedAsync }
+}
+
+// ---------------------------------------------------------------------------
+// Static analysis helpers (pure — no interpreter state)
+// ---------------------------------------------------------------------------
+
+// Collect the names bound by a (possibly destructuring) parameter / pattern.
+function collectPatternNames(node: any, out: Set<string>): void {
+  if (!node) return
+  switch (node.type) {
+    case 'Identifier': out.add(node.name); break
+    case 'AssignmentPattern': collectPatternNames(node.left, out); break
+    case 'RestElement': collectPatternNames(node.argument, out); break
+    case 'ArrayPattern': for (const e of node.elements) collectPatternNames(e, out); break
+    case 'ObjectPattern':
+      for (const p of node.properties) {
+        collectPatternNames(p.type === 'RestElement' ? p.argument : p.value, out)
+      }
+      break
+  }
+}
+
+// The free variables of a function: identifiers it references that are not its
+// own parameters and not declared anywhere inside it. These are the names that
+// must come from an enclosing scope — i.e. closure candidates.
+function collectFreeVars(fnNode: any): string[] {
+  const declared = new Set<string>()
+  const referenced = new Set<string>()
+  for (const p of fnNode.params ?? []) collectPatternNames(p, declared)
+
+  const visit = (node: any): void => {
+    if (!node || typeof node !== 'object') return
+    if (Array.isArray(node)) { for (const n of node) visit(n); return }
+    if (typeof node.type !== 'string') return
+    switch (node.type) {
+      case 'VariableDeclarator':
+        collectPatternNames(node.id, declared)
+        visit(node.init)
+        return
+      case 'FunctionDeclaration':
+        if (node.id) declared.add(node.id.name)
+        for (const p of node.params) collectPatternNames(p, declared)
+        visit(node.body)
+        return
+      case 'FunctionExpression':
+      case 'ArrowFunctionExpression':
+        for (const p of node.params) collectPatternNames(p, declared)
+        visit(node.body)
+        return
+      case 'Identifier':
+        referenced.add(node.name)
+        return
+      case 'MemberExpression':
+        visit(node.object)
+        if (node.computed) visit(node.property)
+        return
+      case 'Property':
+        if (node.computed) visit(node.key)
+        visit(node.value)
+        return
+      case 'CatchClause':
+        if (node.param) collectPatternNames(node.param, declared)
+        visit(node.body)
+        return
+      default:
+        for (const k in node) {
+          if (k === 'loc' || k === 'start' || k === 'end' || k === 'range' || k === 'type') continue
+          visit(node[k])
+        }
+    }
+  }
+  visit(fnNode.body)
+
+  const free: string[] = []
+  for (const r of referenced) if (!declared.has(r)) free.push(r)
+  return free
+}
+
+// Summarize the global scope's compile phase: hoisted functions and vars, and
+// let/const bindings that live in the Temporal Dead Zone until they execute.
+function computeHoisting(ast: any): HoistingInfo | undefined {
+  const funcs: string[] = []
+  const vars: string[] = []
+  const tdz: { name: string; line: number; kind: 'let' | 'const' }[] = []
+  for (const stmt of ast.body ?? []) {
+    if (stmt.type === 'FunctionDeclaration' && stmt.id) {
+      funcs.push(stmt.id.name)
+    } else if (stmt.type === 'VariableDeclaration') {
+      for (const d of stmt.declarations) {
+        if (d.id.type !== 'Identifier') continue
+        if (stmt.kind === 'var') vars.push(d.id.name)
+        else tdz.push({ name: d.id.name, line: d.loc?.start.line ?? 1, kind: stmt.kind })
+      }
+    }
+  }
+  if (!funcs.length && !vars.length && !tdz.length) return undefined
+  return { funcs, vars, tdz }
 }
 
 class ReturnSignal {

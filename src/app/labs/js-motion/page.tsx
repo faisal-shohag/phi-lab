@@ -9,12 +9,10 @@ import {
   Cpu,
   AlertCircle,
   Lightbulb,
-  Variable,
   Zap,
   Play,
   FilePlus2,
   Share2,
-  Network,
   BarChart3,
   GraduationCap,
 } from 'lucide-react'
@@ -25,12 +23,41 @@ import type { Step, Trace } from '@/lib/visualizer/types'
 import { heapMap } from '@/lib/visualizer/values'
 import { buildQuestion, type QuizQuestion } from '@/lib/visualizer/quiz'
 import { encodeCodeToUrl, readCodeFromLocation, syncCodeToLocation } from '@/lib/visualizer/share'
+import { useVisualizerSettings } from '@/lib/visualizer/settings'
+import {
+  buildLoops,
+  activeLoop,
+  buildCallTree,
+  activeCallId,
+  consoleEntries,
+} from '@/lib/visualizer/features'
 import { MemoryPanel } from '@/components/visualizer/call-stack'
 import { HeapGraph } from '@/components/visualizer/heap-graph'
 import { Timeline, StepLegend } from '@/components/visualizer/timeline'
 import { PlaybackControls } from '@/components/visualizer/playback-controls'
 import { CodeEditor, type EditorHighlight } from '@/components/visualizer/code-editor'
 import { QuizOverlay } from '@/components/visualizer/quiz-overlay'
+import { SettingsPanel } from '@/components/visualizer/settings-panel'
+import { DiffFlash } from '@/components/visualizer/diff-flash'
+import { ConsoleLane } from '@/components/visualizer/console-lane'
+import { LoopUnroll } from '@/components/visualizer/loop-unroll'
+import { RecursionTree } from '@/components/visualizer/recursion-tree'
+import { EventLoopPanel } from '@/components/visualizer/event-loop'
+import { ClosureCapture } from '@/components/visualizer/closure-capture'
+import { HoistingPanel } from '@/components/visualizer/hoisting-panel'
+import { FlowChart } from '@/components/visualizer/flow-chart'
+import { CallStackStrip } from '@/components/visualizer/call-stack-strip'
+import { ComplexityMeter } from '@/components/visualizer/complexity-meter'
+import {
+  Variable as VariableIcon,
+  Network as NetworkIcon,
+  Repeat as RepeatIcon,
+  GitBranch as GitBranchIcon,
+  Timer as TimerIcon,
+  Lasso as LassoIcon,
+  Layers as LayersIcon,
+  Workflow as WorkflowIcon,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
@@ -84,9 +111,13 @@ export default function Home() {
   const [speed, setSpeed] = useState(1)
   const [activeExampleId, setActiveExampleId] = useState(DEMO_EXAMPLES[0].id)
 
-  const [view, setView] = useState<'memory' | 'heap'>('memory')
+  type PanelView = 'memory' | 'heap' | 'loops' | 'calls' | 'eventloop' | 'closures' | 'hoisting' | 'flow'
+  const [view, setView] = useState<PanelView>('memory')
   const [barMode, setBarMode] = useState(false)
   const [breakpoints, setBreakpoints] = useState<Set<number>>(new Set())
+
+  // Opt-in learning features (persisted in localStorage, all off by default).
+  const { settings, setFeature, resetAll, enabledCount } = useVisualizerSettings()
 
   // Quiz state.
   const [quizMode, setQuizMode] = useState(false)
@@ -277,6 +308,43 @@ export default function Home() {
     return out
   }, [trace, currentIndex])
 
+  // ---- opt-in feature derivations (cheap; computed once per trace/step) ----
+  const loops = useMemo(() => (trace ? buildLoops(trace) : []), [trace])
+  const currentLoop = useMemo(() => activeLoop(loops, currentIndex), [loops, currentIndex])
+  const callTree = useMemo(
+    () => (trace ? buildCallTree(trace) : { roots: [], totalCalls: 0 }),
+    [trace],
+  )
+  const currentCallId = useMemo(
+    () => activeCallId(callTree.roots, currentIndex),
+    [callTree, currentIndex],
+  )
+  const laneEntries = useMemo(
+    () => (trace ? consoleEntries(trace, currentIndex) : []),
+    [trace, currentIndex],
+  )
+
+  const seek = useCallback((idx: number) => { setIsPlaying(false); setCurrentIndex(idx) }, [])
+
+  // Which panel tabs are available depends on enabled features.
+  const panelTabs = useMemo(() => {
+    const tabs: { id: PanelView; label: string; icon: typeof VariableIcon }[] = [
+      { id: 'memory', label: 'Memory', icon: VariableIcon },
+      { id: 'heap', label: 'Heap graph', icon: NetworkIcon },
+    ]
+    if (settings.loopUnroll) tabs.push({ id: 'loops', label: 'Loops', icon: RepeatIcon })
+    if (settings.flowChart) tabs.push({ id: 'flow', label: 'Flow chart', icon: WorkflowIcon })
+    if (settings.recursionTree) tabs.push({ id: 'calls', label: 'Call tree', icon: GitBranchIcon })
+    if (settings.eventLoop) tabs.push({ id: 'eventloop', label: 'Event loop', icon: TimerIcon })
+    if (settings.closureCapture) tabs.push({ id: 'closures', label: 'Closures', icon: LassoIcon })
+    if (settings.hoisting) tabs.push({ id: 'hoisting', label: 'Hoisting', icon: LayersIcon })
+    return tabs
+  }, [settings])
+
+  // If the active tab's feature was turned off, transparently fall back to
+  // Memory without a state write (avoids a cascading-render effect).
+  const effectiveView: PanelView = panelTabs.some((t) => t.id === view) ? view : 'memory'
+
   // Build the editor's execution highlight from the current step.
   const editorHighlight = useMemo<EditorHighlight | null>(() => {
     if (!currentStep) return null
@@ -462,30 +530,27 @@ export default function Home() {
     return false
   }, [currentStep, heap])
 
-  // ---- Memory / Heap panel ----
+  // ---- Memory / Heap / feature panel ----
   const visualPanel = (
-    <section className="rounded-xl border-2 border-border bg-card overflow-hidden shadow-sm flex flex-col min-h-0 h-full">
-      <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/50 shrink-0">
-        <button
-          onClick={() => setView('memory')}
-          className={cn(
-            'flex items-center gap-1.5 text-sm font-semibold px-2 py-1 rounded-md transition-colors',
-            view === 'memory' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <Variable className="h-4 w-4" /> Memory
-        </button>
-        <button
-          onClick={() => setView('heap')}
-          className={cn(
-            'flex items-center gap-1.5 text-sm font-semibold px-2 py-1 rounded-md transition-colors',
-            view === 'heap' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <Network className="h-4 w-4" /> Heap graph
-        </button>
-        {view === 'memory' && anyNumericArray && (
-          <label className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer">
+    <section className="relative rounded-xl border-2 border-border bg-card overflow-hidden shadow-sm flex flex-col min-h-0 h-full">
+      <div className="flex items-center gap-1 px-2 py-2 border-b bg-muted/50 shrink-0 overflow-x-auto">
+        {panelTabs.map((tab) => {
+          const Icon = tab.icon
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setView(tab.id)}
+              className={cn(
+                'flex items-center gap-1.5 text-sm font-semibold px-2 py-1 rounded-md transition-colors whitespace-nowrap',
+                effectiveView === tab.id ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <Icon className="h-4 w-4" /> {tab.label}
+            </button>
+          )
+        })}
+        {effectiveView === 'memory' && anyNumericArray && (
+          <label className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer shrink-0 pl-2">
             <BarChart3 className="h-3.5 w-3.5" />
             bars
             <Switch checked={barMode} onCheckedChange={setBarMode} size="sm" />
@@ -493,7 +558,7 @@ export default function Home() {
         )}
       </div>
       <div className="flex-1 min-h-0 overflow-hidden">
-        {view === 'memory' ? (
+        {effectiveView === 'memory' && (
           <div className="h-full overflow-y-auto p-2.5">
             <MemoryPanel
               step={currentStep}
@@ -503,10 +568,26 @@ export default function Home() {
               barMode={barMode}
             />
           </div>
-        ) : (
-          <HeapGraph step={currentStep} />
         )}
+        {effectiveView === 'heap' && <HeapGraph step={currentStep} />}
+        {effectiveView === 'loops' && <LoopUnroll loop={currentLoop} currentIndex={currentIndex} onJump={seek} />}
+        {effectiveView === 'calls' && (
+          <RecursionTree
+            roots={callTree.roots}
+            totalCalls={callTree.totalCalls}
+            currentIndex={currentIndex}
+            activeId={currentCallId}
+            onJump={seek}
+          />
+        )}
+        {effectiveView === 'flow' && <FlowChart trace={trace} currentIndex={currentIndex} onJump={seek} />}
+        {effectiveView === 'eventloop' && <EventLoopPanel async={currentStep?.async} />}
+        {effectiveView === 'closures' && <ClosureCapture step={currentStep} />}
+        {effectiveView === 'hoisting' && <HoistingPanel hoisting={trace?.hoisting} step={currentStep} />}
       </div>
+      {settings.diffFlash && (
+        <DiffFlash currentStep={currentStep} previousStep={previousStep} stepIndex={currentIndex} />
+      )}
     </section>
   )
 
@@ -515,10 +596,17 @@ export default function Home() {
       <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/50 shrink-0">
         <Terminal className="h-4 w-4 text-muted-foreground" />
         <span className="text-sm font-semibold">Console output</span>
+        {settings.consoleLane && (
+          <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+            lane
+          </span>
+        )}
         <span className="ml-auto text-[11px] text-muted-foreground">{outputsSoFar.length} line(s)</span>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto bg-slate-900 p-2.5">
-        {outputsSoFar.length === 0 ? (
+        {settings.consoleLane ? (
+          <ConsoleLane entries={laneEntries} currentIndex={currentIndex} onJump={seek} />
+        ) : outputsSoFar.length === 0 ? (
           <div className="text-sm text-slate-500 italic text-center py-6 font-mono">
             console output will appear here
           </div>
@@ -584,6 +672,12 @@ export default function Home() {
               Quiz
               <Switch checked={quizMode} onCheckedChange={(v) => { setQuizMode(v); if (!v) setActiveQuestion(null); setStreak(0) }} size="sm" />
             </label>
+            <SettingsPanel
+              settings={settings}
+              onToggle={setFeature}
+              onReset={resetAll}
+              enabledCount={enabledCount}
+            />
             <AnimatedThemeToggler />
             <Button variant="secondary" className="hidden sm:flex rounded-full">
               <Cpu className="mr-1" />
@@ -677,6 +771,11 @@ export default function Home() {
                           readOnly={isPlaying}
                         />
                       </div>
+                      {settings.complexityMeter && currentLoop && (
+                        <div className="shrink-0 px-2 pb-2 pt-1">
+                          <ComplexityMeter loop={currentLoop} currentIndex={currentIndex} />
+                        </div>
+                      )}
                     </section>
                   </ResizablePanel>
 
@@ -684,6 +783,7 @@ export default function Home() {
 
                   <ResizablePanel defaultSize={50} minSize={25} className="min-w-0">
                     <div className="h-full flex flex-col gap-3 min-h-0 relative">
+                      {settings.callStackStrip && <CallStackStrip step={currentStep} />}
                       {stepBanner}
                       <div className="flex-1 min-h-0">
                         <ResizablePanelGroup orientation="vertical" className="h-full gap-3">
