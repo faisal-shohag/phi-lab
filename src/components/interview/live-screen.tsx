@@ -1,0 +1,206 @@
+'use client'
+
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { ArrowDown, Mic, MicOff, PhoneOff } from 'lucide-react'
+import { SpeakingOrb } from './speaking-orb'
+import { CountdownRing } from './countdown-ring'
+import { useAnalyserLevel } from './use-analyser-level'
+import { ROUND_SECONDS, topicById, levelById, type LevelId } from '@/lib/interview/topics'
+import type { TranscriptEntry } from '@/lib/interview/use-interview'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+
+// How close to the bottom (in px) counts as "still at the latest message".
+const BOTTOM_THRESHOLD = 48
+
+interface LiveScreenProps {
+  topic: string | null
+  level: LevelId | null
+  secondsLeft: number
+  transcript: TranscriptEntry[]
+  muted: boolean
+  modelSpeaking: boolean
+  micAnalyser: AnalyserNode | null
+  outputAnalyser: AnalyserNode | null
+  onMute: () => void
+  onEnd: () => void
+}
+
+export function LiveScreen(props: LiveScreenProps) {
+  const {
+    topic, level, secondsLeft, transcript, muted, modelSpeaking,
+    micAnalyser, outputAnalyser, onMute, onEnd,
+  } = props
+
+  const { level: outLevel } = useAnalyserLevel(outputAnalyser, modelSpeaking)
+  const { level: micLevel } = useAnalyserLevel(micAnalyser, !muted)
+
+  const candidateSpeaking = !muted && micLevel > 0.08 && !modelSpeaking
+  const speaker: 'interviewer' | 'candidate' | 'idle' =
+    modelSpeaking ? 'interviewer' : candidateSpeaking ? 'candidate' : 'idle'
+  const orbLevel = modelSpeaking ? outLevel : candidateSpeaking ? micLevel : 0.02
+
+  const topicLabel = topicById(topic ?? '')?.label ?? topic ?? ''
+  const levelLabel = levelById(level ?? 'medium')?.label ?? level ?? ''
+
+  const statusText = modelSpeaking
+    ? 'Interviewer is speaking…'
+    : candidateSpeaking
+      ? 'Listening to you…'
+      : muted
+        ? 'You are muted'
+        : 'Your turn — go ahead'
+
+  // Auto-scroll the transcript feed — but only while the user is at the
+  // bottom. If they've scrolled up to re-read something, leave them there and
+  // surface a "jump to latest" affordance instead of yanking them down.
+  const feedRef = useRef<HTMLDivElement | null>(null)
+  const isAtBottomRef = useRef(true)
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false)
+
+  const handleFeedScroll = useCallback(() => {
+    const el = feedRef.current
+    if (!el) return
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_THRESHOLD
+    isAtBottomRef.current = atBottom
+    setShowJumpToLatest(!atBottom)
+  }, [])
+
+  useEffect(() => {
+    const el = feedRef.current
+    if (el && isAtBottomRef.current) el.scrollTop = el.scrollHeight
+  }, [transcript])
+
+  const jumpToLatest = useCallback(() => {
+    const el = feedRef.current
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    isAtBottomRef.current = true
+    setShowJumpToLatest(false)
+  }, [])
+
+  return (
+    <div className="mx-auto grid h-[calc(100dvh-4.5rem)] w-full max-w-5xl grid-cols-1 grid-rows-[auto_1fr] gap-4 px-4 py-6 lg:grid-cols-[minmax(0,360px)_1fr] lg:grid-rows-[1fr]">
+      {/* Left: orb + controls */}
+      <div className="flex flex-col items-center gap-6 overflow-y-auto rounded-2xl border-2 border-border bg-card p-6 shadow-sm">
+        <div className="flex items-center gap-2 self-start">
+          <Badge variant="outline" className="gap-1">
+            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" /> LIVE
+          </Badge>
+          <Badge variant="secondary">{topicLabel}</Badge>
+          <Badge variant="outline">{levelLabel}</Badge>
+        </div>
+
+        <div className="relative flex h-56 w-56 items-center justify-center">
+          <SpeakingOrb level={orbLevel} speaker={speaker} className="absolute inset-0" />
+        </div>
+
+        <div className="text-center">
+          <p className="text-lg font-semibold">{statusText}</p>
+        </div>
+
+        <CountdownRing secondsLeft={secondsLeft} total={ROUND_SECONDS} />
+
+        {/* Mic level waveform */}
+        <div className="flex h-6 items-center gap-1">
+          {Array.from({ length: 9 }).map((_, i) => {
+            const base = muted ? 0 : micLevel
+            const h = 6 + Math.abs(Math.sin(i * 1.3)) * base * 26
+            return (
+              <motion.span
+                key={i}
+                className={cn('w-1 rounded-full', muted ? 'bg-muted' : 'bg-rose-400')}
+                animate={{ height: Math.max(6, h) }}
+                transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+              />
+            )
+          })}
+        </div>
+
+        {/* Controls */}
+        <div className="flex items-center gap-5">
+          <button
+            onClick={onMute}
+            className={cn(
+              'flex h-12 w-12 items-center justify-center rounded-full border-2 transition-colors',
+              muted
+                ? 'border-rose-300 bg-rose-50 text-rose-600 dark:bg-rose-950/40'
+                : 'border-border bg-background text-foreground hover:bg-muted',
+            )}
+            title={muted ? 'Unmute' : 'Mute'}
+          >
+            {muted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+          </button>
+          <button
+            onClick={onEnd}
+            className="flex h-14 w-14 items-center justify-center rounded-full bg-rose-500 text-white shadow-lg transition-transform hover:scale-105 hover:bg-rose-600"
+            title="End interview"
+          >
+            <PhoneOff className="h-6 w-6" />
+          </button>
+        </div>
+      </div>
+
+      {/* Right: live transcript */}
+      <div className="relative flex h-full min-h-0 flex-col rounded-2xl border-2 border-border bg-card shadow-sm">
+        <div className="flex items-center gap-2 border-b px-4 py-3">
+          <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+          <span className="text-sm font-semibold">Live transcript</span>
+          <span className="ml-auto text-xs text-muted-foreground">{transcript.length} message(s)</span>
+        </div>
+        <div ref={feedRef} onScroll={handleFeedScroll} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+          {transcript.length === 0 ? (
+            <div className="flex h-full items-center justify-center text-center text-sm text-muted-foreground">
+              The interviewer will greet you and ask the first question…
+            </div>
+          ) : (
+            <AnimatePresence initial={false}>
+              {transcript.map((entry, i) => {
+                const isCandidate = entry.role === 'candidate'
+                return (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={cn('flex flex-col', isCandidate ? 'items-end' : 'items-start')}
+                  >
+                    <span className={cn('mb-0.5 px-1 text-[10px] font-semibold uppercase tracking-wide', isCandidate ? 'text-rose-500' : 'text-violet-500')}>
+                      {isCandidate ? 'You' : 'Interviewer'}
+                    </span>
+                    <div
+                      className={cn(
+                        'max-w-[85%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed',
+                        isCandidate
+                          ? 'rounded-br-sm bg-rose-50 text-rose-950 dark:bg-rose-950/40 dark:text-rose-100'
+                          : 'rounded-bl-sm bg-violet-50 text-violet-950 dark:bg-violet-950/40 dark:text-violet-100',
+                      )}
+                    >
+                      {entry.text || <span className="opacity-50">…</span>}
+                    </div>
+                  </motion.div>
+                )
+              })}
+            </AnimatePresence>
+          )}
+        </div>
+
+        <AnimatePresence>
+          {showJumpToLatest && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              className="absolute bottom-3 left-1/2 -translate-x-1/2"
+            >
+              <Button size="sm" variant="secondary" className="rounded-full shadow-md" onClick={jumpToLatest}>
+                <ArrowDown className="h-3.5 w-3.5" />
+                Jump to latest
+              </Button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  )
+}
