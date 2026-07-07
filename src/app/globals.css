@@ -138,3 +138,8 @@
 .cm-line-number {
   @apply dark:border-r-zinc-600!
 }
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: oklch(0.7 0 0 / 40%); border-radius: 9999px; }
+* { scrollbar-width: thin; scrollbar-color: oklch(0.7 0 0 / 40%) transparent; }

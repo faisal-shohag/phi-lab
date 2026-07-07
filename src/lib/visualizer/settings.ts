@@ -13,7 +13,8 @@ export type FeatureKey =
   | 'hoisting'
   | 'recursionTree'
   | 'flowChart'
-  | 'callStackStrip'
+  | 'heapGraph'
+  | 'callStack'
   | 'complexityMeter'
 
 export type VisualizerSettings = Record<FeatureKey, boolean>
@@ -27,8 +28,9 @@ export const DEFAULT_SETTINGS: VisualizerSettings = {
   hoisting: false,
   recursionTree: false,
   flowChart: false,
-  callStackStrip: false,
-  complexityMeter: false,
+  heapGraph: false,
+  callStack: true,
+  complexityMeter: true,
 }
 
 export interface FeatureMeta {
@@ -59,9 +61,15 @@ export const FEATURE_META: FeatureMeta[] = [
     group: 'Understanding',
   },
   {
-    key: 'callStackStrip',
-    label: 'Call-stack strip',
-    blurb: 'A breadcrumb of the live call stack — global → add(a, b) → innerCall().',
+    key: 'heapGraph',
+    label: 'Heap graph',
+    blurb: 'A live object/array reference graph — see what points to what on the heap.',
+    group: 'Understanding',
+  },
+  {
+    key: 'callStack',
+    label: 'Call stack',
+    blurb: 'Watch frames push on and pop off the stack as functions are called and return.',
     group: 'Understanding',
   },
   {

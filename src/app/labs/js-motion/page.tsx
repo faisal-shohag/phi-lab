@@ -46,7 +46,8 @@ import { EventLoopPanel } from '@/components/visualizer/event-loop'
 import { ClosureCapture } from '@/components/visualizer/closure-capture'
 import { HoistingPanel } from '@/components/visualizer/hoisting-panel'
 import { FlowChart } from '@/components/visualizer/flow-chart'
-import { CallStackStrip } from '@/components/visualizer/call-stack-strip'
+import { CallStackPanel } from '@/components/visualizer/call-stack-panel'
+import { FloatingWindow } from '@/components/visualizer/floating-window'
 import { ComplexityMeter } from '@/components/visualizer/complexity-meter'
 import {
   Variable as VariableIcon,
@@ -57,7 +58,18 @@ import {
   Lasso as LassoIcon,
   Layers as LayersIcon,
   Workflow as WorkflowIcon,
+  ArrowUpNarrowWide as HoistIcon,
+  X as XIcon,
+  Plus as PlusIcon,
+  PictureInPicture2 as PopOutIcon,
 } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import type { FeatureKey } from '@/lib/visualizer/settings'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
@@ -69,6 +81,23 @@ import {
 } from '@/components/ui/resizable'
 import { cn } from '@/lib/utils'
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
+
+type PanelView =
+  | 'memory' | 'heap' | 'callstack' | 'loops' | 'calls'
+  | 'eventloop' | 'closures' | 'hoisting' | 'flow'
+
+// Feature tabs (everything except the permanent Memory tab). Each maps to a
+// settings flag; enabling the flag pins the tab, closing its "x" turns it off.
+const TAB_FEATURES: { view: PanelView; key: FeatureKey; label: string; icon: typeof VariableIcon }[] = [
+  { view: 'heap',      key: 'heapGraph',      label: 'Heap graph', icon: NetworkIcon },
+  { view: 'callstack', key: 'callStack',      label: 'Call stack', icon: LayersIcon },
+  { view: 'loops',     key: 'loopUnroll',     label: 'Loops',      icon: RepeatIcon },
+  { view: 'flow',      key: 'flowChart',      label: 'Flow chart', icon: WorkflowIcon },
+  { view: 'calls',     key: 'recursionTree',  label: 'Call tree',  icon: GitBranchIcon },
+  { view: 'eventloop', key: 'eventLoop',      label: 'Event loop', icon: TimerIcon },
+  { view: 'closures',  key: 'closureCapture', label: 'Closures',   icon: LassoIcon },
+  { view: 'hoisting',  key: 'hoisting',       label: 'Hoisting',   icon: HoistIcon },
+]
 
 const KIND_DESCRIPTION: Record<string, string> = {
   enter:       'Entering a function',
@@ -111,10 +140,10 @@ export default function Home() {
   const [speed, setSpeed] = useState(1)
   const [activeExampleId, setActiveExampleId] = useState(DEMO_EXAMPLES[0].id)
 
-  type PanelView = 'memory' | 'heap' | 'loops' | 'calls' | 'eventloop' | 'closures' | 'hoisting' | 'flow'
   const [view, setView] = useState<PanelView>('memory')
   const [barMode, setBarMode] = useState(false)
   const [breakpoints, setBreakpoints] = useState<Set<number>>(new Set())
+  const [floating, setFloating] = useState(false)
 
   // Opt-in learning features (persisted in localStorage, all off by default).
   const { settings, setFeature, resetAll, enabledCount } = useVisualizerSettings()
@@ -328,18 +357,17 @@ export default function Home() {
 
   // Which panel tabs are available depends on enabled features.
   const panelTabs = useMemo(() => {
-    const tabs: { id: PanelView; label: string; icon: typeof VariableIcon }[] = [
+    const tabs: { id: PanelView; key?: FeatureKey; label: string; icon: typeof VariableIcon }[] = [
       { id: 'memory', label: 'Memory', icon: VariableIcon },
-      { id: 'heap', label: 'Heap graph', icon: NetworkIcon },
     ]
-    if (settings.loopUnroll) tabs.push({ id: 'loops', label: 'Loops', icon: RepeatIcon })
-    if (settings.flowChart) tabs.push({ id: 'flow', label: 'Flow chart', icon: WorkflowIcon })
-    if (settings.recursionTree) tabs.push({ id: 'calls', label: 'Call tree', icon: GitBranchIcon })
-    if (settings.eventLoop) tabs.push({ id: 'eventloop', label: 'Event loop', icon: TimerIcon })
-    if (settings.closureCapture) tabs.push({ id: 'closures', label: 'Closures', icon: LassoIcon })
-    if (settings.hoisting) tabs.push({ id: 'hoisting', label: 'Hoisting', icon: LayersIcon })
+    for (const f of TAB_FEATURES) {
+      if (settings[f.key]) tabs.push({ id: f.view, key: f.key, label: f.label, icon: f.icon })
+    }
     return tabs
   }, [settings])
+
+  // Tab-features not currently pinned — offered by the "+" menu.
+  const addableTabs = useMemo(() => TAB_FEATURES.filter((f) => !settings[f.key]), [settings])
 
   // If the active tab's feature was turned off, transparently fall back to
   // Memory without a state write (avoids a cascading-render effect).
@@ -536,26 +564,77 @@ export default function Home() {
       <div className="flex items-center gap-1 px-2 py-2 border-b bg-muted/50 shrink-0 overflow-x-auto">
         {panelTabs.map((tab) => {
           const Icon = tab.icon
+          const isActive = effectiveView === tab.id
           return (
-            <button
+            <div
               key={tab.id}
-              onClick={() => setView(tab.id)}
               className={cn(
-                'flex items-center gap-1.5 text-sm font-semibold px-2 py-1 rounded-md transition-colors whitespace-nowrap',
-                effectiveView === tab.id ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                'group flex items-center gap-1 rounded-md pr-1 transition-colors whitespace-nowrap',
+                isActive ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground',
               )}
             >
-              <Icon className="h-4 w-4" /> {tab.label}
-            </button>
+              <button
+                onClick={() => setView(tab.id)}
+                className="flex items-center gap-1.5 text-sm font-semibold px-2 py-1"
+              >
+                <Icon className="h-4 w-4" /> {tab.label}
+              </button>
+              {tab.key && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setFeature(tab.key!, false) }}
+                  title={`Close ${tab.label}`}
+                  className="rounded p-0.5 text-muted-foreground/60 hover:bg-muted hover:text-foreground"
+                >
+                  <XIcon className="h-3 w-3" />
+                </button>
+              )}
+            </div>
           )
         })}
-        {effectiveView === 'memory' && anyNumericArray && (
-          <label className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer shrink-0 pl-2">
-            <BarChart3 className="h-3.5 w-3.5" />
-            bars
-            <Switch checked={barMode} onCheckedChange={setBarMode} size="sm" />
-          </label>
+        {addableTabs.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                title="Add a feature tab"
+                className="flex items-center rounded-md p-1 text-muted-foreground hover:bg-background hover:text-foreground shrink-0"
+              >
+                <PlusIcon className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {addableTabs.map((f) => {
+                const Icon = f.icon
+                return (
+                  <DropdownMenuItem
+                    key={f.key}
+                    onSelect={() => { setFeature(f.key, true); setView(f.view) }}
+                    className="gap-2"
+                  >
+                    <Icon className="h-4 w-4" /> {f.label}
+                  </DropdownMenuItem>
+                )
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
+        <div className="ml-auto flex items-center gap-2 shrink-0 pl-2">
+          {effectiveView === 'memory' && anyNumericArray && (
+            <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer">
+              <BarChart3 className="h-3.5 w-3.5" />
+              bars
+              <Switch checked={barMode} onCheckedChange={setBarMode} size="sm" />
+            </label>
+          )}
+          {!floating && (
+            <button
+              onClick={() => setFloating(true)}
+              title="Pop out into a floating window"
+              className="rounded-md p-1 text-muted-foreground hover:bg-background hover:text-foreground"
+            >
+              <PopOutIcon className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       </div>
       <div className="flex-1 min-h-0 overflow-hidden">
         {effectiveView === 'memory' && (
@@ -570,6 +649,7 @@ export default function Home() {
           </div>
         )}
         {effectiveView === 'heap' && <HeapGraph step={currentStep} />}
+        {effectiveView === 'callstack' && <CallStackPanel step={currentStep} />}
         {effectiveView === 'loops' && <LoopUnroll loop={currentLoop} currentIndex={currentIndex} onJump={seek} />}
         {effectiveView === 'calls' && (
           <RecursionTree
@@ -603,7 +683,7 @@ export default function Home() {
         )}
         <span className="ml-auto text-[11px] text-muted-foreground">{outputsSoFar.length} line(s)</span>
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto bg-slate-900 p-2.5">
+      <div className="flex-1 min-h-0 overflow-y-auto bg-zinc-200 dark:bg-zinc-900 p-2.5">
         {settings.consoleLane ? (
           <ConsoleLane entries={laneEntries} currentIndex={currentIndex} onJump={seek} />
         ) : outputsSoFar.length === 0 ? (
@@ -619,7 +699,7 @@ export default function Home() {
                   initial={{ opacity: 0, x: -8 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ duration: 0.25, ease: 'easeOut' }}
-                  className="text-emerald-300 flex gap-2"
+                  className="text-emerald-700 dark:text-emerald-300 flex gap-2"
                 >
                   <span className="text-slate-500 select-none">›</span>
                   <span className="break-all whitespace-pre-wrap">{line}</span>
@@ -653,8 +733,13 @@ export default function Home() {
   ) : null
 
   return (
-    <div className="h-screen flex flex-col bg-linear-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 overflow-hidden">
+    <div className="h-screen flex flex-col bg-linear-to-br from-slate-50 via-white to-slate-100 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-950 overflow-hidden">
       <Toaster position="top-center" />
+      {floating && (
+        <FloatingWindow title="Visual panel" onDock={() => setFloating(false)}>
+          {visualPanel}
+        </FloatingWindow>
+      )}
       <header className="border-b bg-background/80 backdrop-blur-sm shrink-0">
         <div className="px-4 py-2.5 flex items-center gap-3">
           <div className="flex items-center gap-2">
@@ -783,12 +868,24 @@ export default function Home() {
 
                   <ResizablePanel defaultSize={50} minSize={25} className="min-w-0">
                     <div className="h-full flex flex-col gap-3 min-h-0 relative">
-                      {settings.callStackStrip && <CallStackStrip step={currentStep} />}
                       {stepBanner}
                       <div className="flex-1 min-h-0">
                         <ResizablePanelGroup orientation="vertical" className="h-full gap-3">
                           <ResizablePanel defaultSize={55} minSize={20} className="min-h-0">
-                            {visualPanel}
+                            {floating ? (
+                              <div className="flex h-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-muted/20 p-6 text-center">
+                                <PopOutIcon className="h-6 w-6 text-muted-foreground" />
+                                <p className="text-sm text-muted-foreground">Panel is floating.</p>
+                                <button
+                                  onClick={() => setFloating(false)}
+                                  className="rounded-md border px-2.5 py-1 text-xs font-semibold hover:bg-background"
+                                >
+                                  Dock it back
+                                </button>
+                              </div>
+                            ) : (
+                              visualPanel
+                            )}
                           </ResizablePanel>
                           <ResizableHandle withHandle />
                           <ResizablePanel defaultSize={45} minSize={20} className="min-h-0">
