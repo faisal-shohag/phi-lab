@@ -11,6 +11,7 @@ import { ReportScreen } from '@/components/interview/report-screen'
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
 import { Button } from '@/components/ui/button'
 import { UserMenu } from '@/components/auth/user-menu'
+import { XpBadge } from '@/components/gamification/xp-badge'
 import { Logo } from '@/components/brand/logo'
 import { resolveErrorCopy } from '@/lib/interview/errors'
 
@@ -34,6 +35,7 @@ export function InterviewLab({ userName }: { userName?: string }) {
               </Link>
             </Button>
             <AnimatedThemeToggler />
+            <XpBadge />
             <UserMenu />
           </div>
         </div>
@@ -65,6 +67,7 @@ export function InterviewLab({ userName }: { userName?: string }) {
               <GreenRoom
                 topic={iv.topic}
                 level={iv.level}
+                pressure={iv.pressure}
                 connecting={false}
                 onStart={iv.start}
                 onBack={iv.reset}
@@ -115,7 +118,7 @@ export function InterviewLab({ userName }: { userName?: string }) {
                 level={iv.level}
                 onNew={iv.reset}
                 onRetry={() => {
-                  if (iv.topic && iv.level) iv.enterGreenRoom(iv.topic, iv.level)
+                  if (iv.topic && iv.level) iv.enterGreenRoom(iv.topic, iv.level, iv.pressure)
                 }}
               />
             </motion.div>

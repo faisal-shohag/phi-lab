@@ -20,6 +20,60 @@ export interface Level {
 
 export type LanguageId = 'en' | 'bn'
 
+/**
+ * Interview pressure / demeanor — the "Anxiety Trainer" dimension. Same topic
+ * and difficulty, but the interviewer's temperament ramps from supportive to a
+ * stress panel that interrupts. Graded exposure: practise composure, not just
+ * correctness.
+ */
+export type PressureId = 'supportive' | 'neutral' | 'stern' | 'panel'
+
+export interface Pressure {
+  id: PressureId
+  label: string
+  /** One-line description shown in the picker. */
+  description: string
+  /** lucide-react icon name, resolved on the client. */
+  icon: string
+  /** Tailwind gradient classes for the selected chip. */
+  tint: string
+}
+
+export const PRESSURES: Pressure[] = [
+  {
+    id: 'supportive',
+    label: 'Supportive',
+    description: 'Warm and patient. Lots of encouragement and hints. A gentle warm-up.',
+    icon: 'HeartHandshake',
+    tint: 'from-emerald-400 to-teal-600',
+  },
+  {
+    id: 'neutral',
+    label: 'Professional',
+    description: 'Calm and businesslike — a realistic, fair interview.',
+    icon: 'Briefcase',
+    tint: 'from-sky-400 to-indigo-600',
+  },
+  {
+    id: 'stern',
+    label: 'Stern',
+    description: 'Terse and skeptical. Pushes back on vague answers and asks you to justify.',
+    icon: 'Gavel',
+    tint: 'from-amber-500 to-orange-600',
+  },
+  {
+    id: 'panel',
+    label: 'Stress Panel',
+    description: 'A tough panel that interrupts, switches topics abruptly and piles on time pressure.',
+    icon: 'Flame',
+    tint: 'from-rose-500 to-red-600',
+  },
+]
+
+export function pressureById(id: string): Pressure | undefined {
+  return PRESSURES.find((p) => p.id === id)
+}
+
 export interface Language {
   id: LanguageId
   label: string
@@ -99,6 +153,26 @@ export interface SystemInstructionOptions {
   includeIntro?: boolean
   /** Persona name the interviewer may use to introduce themselves. */
   personaName?: string
+  /** Interviewer demeanor / stress level. Defaults to 'neutral'. */
+  pressure?: PressureId
+}
+
+// Demeanor instructions injected per pressure level. `neutral` adds nothing —
+// it is the baseline persona already described above.
+const PRESSURE_INSTRUCTIONS: Record<PressureId, string[]> = {
+  supportive: [
+    '',
+    'Demeanor: SUPPORTIVE. Be especially warm, patient and encouraging. Reassure the candidate when they hesitate, praise partial answers, and offer a hint early rather than letting them struggle. Keep the mood relaxed.',
+  ],
+  neutral: [],
+  stern: [
+    '',
+    'Demeanor: STERN. Be terse, skeptical and businesslike, though never insulting. Do not offer praise. When an answer is vague or hand-wavy, push back: ask them to be specific, to justify a claim, or "are you sure about that?". Expect precise reasoning before moving on.',
+  ],
+  panel: [
+    '',
+    'Demeanor: STRESS PANEL. Simulate a demanding interview panel under time pressure. Occasionally interrupt the candidate mid-answer to redirect or to press a detail. Switch between sub-topics abruptly. Be curt, rarely acknowledge answers, and convey that time is short. Stay professional and never abusive — the goal is to train composure under pressure, not to demean.',
+  ],
 }
 
 /**
@@ -111,7 +185,7 @@ export function buildSystemInstruction(
   level: LevelId,
   opts: SystemInstructionOptions = {},
 ): string {
-  const { language = 'en', includeIntro = false, personaName } = opts
+  const { language = 'en', includeIntro = false, personaName, pressure = 'neutral' } = opts
   const topic = topicById(topicId)
   const lvl = levelById(level)
   const topicLabel = topic?.label ?? topicId
@@ -130,6 +204,8 @@ export function buildSystemInstruction(
     '- Do not read out code character by character; keep it verbal and natural.',
     `- Progressively probe deeper within the ${levelLabel} level as the candidate answers.`,
   ]
+
+  lines.push(...PRESSURE_INSTRUCTIONS[pressure])
 
   if (language === 'bn') {
     lines.push(

@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
 import { UserMenu } from '@/components/auth/user-menu'
+import { XpBadge } from '@/components/gamification/xp-badge'
 import { Logo } from '@/components/brand/logo'
 import { Button } from '@/components/ui/button'
 
@@ -41,6 +42,7 @@ export function LandingHeader() {
           <Button asChild size="sm" className="hidden sm:inline-flex">
             <a href="#labs">Open a lab</a>
           </Button>
+          <XpBadge />
           <UserMenu />
         </div>
       </div>

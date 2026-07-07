@@ -145,6 +145,25 @@
   @apply dark:border-r-zinc-600!
 }
 
+/* Gamified XP pill: a sheen sweep across the pill and a soft pulse on the level chip. */
+@keyframes xp-shimmer {
+  0% { transform: translateX(-150%); }
+  100% { transform: translateX(150%); }
+}
+.xp-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(100deg, transparent 20%, rgba(255, 255, 255, 0.55) 50%, transparent 80%);
+  transform: translateX(-150%);
+  animation: xp-shimmer 2.6s ease-in-out infinite;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .xp-shimmer::after { animation: none; }
+}
+
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: oklch(0.7 0 0 / 40%); border-radius: 9999px; }

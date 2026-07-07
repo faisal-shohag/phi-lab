@@ -6,7 +6,7 @@ import {
   type LiveServerMessage,
   type Session,
 } from '@google/genai'
-import { ROUND_SECONDS, characterById, type LanguageId, type LevelId } from './topics'
+import { ROUND_SECONDS, characterById, type LanguageId, type LevelId, type PressureId } from './topics'
 import { createMicStream, createPlaybackQueue, type MicStream, type PlaybackQueue } from './audio'
 import type { InterviewReport } from './report-types'
 import type { InterviewErrorCode } from './errors'
@@ -50,11 +50,12 @@ export interface UseInterview {
   outputAnalyser: AnalyserNode | null
   topic: string | null
   level: LevelId | null
+  pressure: PressureId
   language: LanguageId
   characterId: string
   /** True when a failed report can be retried (session persisted server-side). */
   canRetryReport: boolean
-  enterGreenRoom: (topic: string, level: LevelId) => void
+  enterGreenRoom: (topic: string, level: LevelId, pressure?: PressureId) => void
   start: (opts: StartOptions) => Promise<void>
   retryReport: () => Promise<void>
   endEarly: () => void
@@ -82,6 +83,7 @@ export function useInterview(): UseInterview {
   const [outputAnalyser, setOutputAnalyser] = useState<AnalyserNode | null>(null)
   const [topic, setTopic] = useState<string | null>(null)
   const [level, setLevel] = useState<LevelId | null>(null)
+  const [pressure, setPressure] = useState<PressureId>('neutral')
   const [language, setLanguage] = useState<LanguageId>('en')
   const [characterId, setCharacterId] = useState('nova')
 
@@ -108,6 +110,7 @@ export function useInterview(): UseInterview {
   const transcriptRef = useRef<TranscriptEntry[]>([])
   const topicRef = useRef<string | null>(null)
   const levelRef = useRef<LevelId | null>(null)
+  const pressureRef = useRef<PressureId>('neutral')
   const languageRef = useRef<LanguageId>('en')
   const characterRef = useRef('nova')
 
@@ -287,6 +290,7 @@ export function useInterview(): UseInterview {
       body: JSON.stringify({
         topic: topicRef.current,
         level: levelRef.current,
+        pressure: pressureRef.current,
         language: languageRef.current,
         characterId: characterRef.current,
         ...(resume ? { resumeSessionId: sessionIdRef.current, resumeHandle: resumeHandleRef.current ?? undefined } : {}),
@@ -375,11 +379,13 @@ export function useInterview(): UseInterview {
   // eslint-disable-next-line react-hooks/immutability
   useEffect(() => { handleDropRef.current = handleDrop }, [handleDrop])
 
-  const enterGreenRoom = useCallback((topicId: string, lvl: LevelId) => {
+  const enterGreenRoom = useCallback((topicId: string, lvl: LevelId, pres: PressureId = 'neutral') => {
     setTopic(topicId)
     setLevel(lvl)
+    setPressure(pres)
     topicRef.current = topicId
     levelRef.current = lvl
+    pressureRef.current = pres
     setError(null)
     setErrorCode(null)
     setPhase('greenroom')
@@ -499,6 +505,7 @@ export function useInterview(): UseInterview {
     outputAnalyser,
     topic,
     level,
+    pressure,
     language,
     characterId,
     // Report failures always leave a persisted session that can be re-scored.

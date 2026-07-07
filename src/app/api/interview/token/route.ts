@@ -7,6 +7,7 @@ import {
   ROUND_SECONDS,
   type LanguageId,
   type LevelId,
+  type PressureId,
 } from '@/lib/interview/topics'
 import { requireUser } from '@/lib/auth-server'
 import { errorResponse } from '@/lib/interview/errors'
@@ -37,6 +38,7 @@ export async function POST(request: Request) {
 
   let topic = ''
   let level: LevelId = 'medium'
+  let pressure: PressureId = 'neutral'
   let language: LanguageId = 'en'
   let characterId = 'nova'
   let resumeSessionId: string | undefined
@@ -45,6 +47,7 @@ export async function POST(request: Request) {
     const body = await request.json()
     if (typeof body?.topic === 'string') topic = body.topic
     if (typeof body?.level === 'string') level = body.level as LevelId
+    if (typeof body?.pressure === 'string') pressure = body.pressure as PressureId
     if (typeof body?.language === 'string') language = body.language as LanguageId
     if (typeof body?.characterId === 'string') characterId = body.characterId
     if (typeof body?.resumeSessionId === 'string') resumeSessionId = body.resumeSessionId
@@ -71,6 +74,7 @@ export async function POST(request: Request) {
       personaName = CHARACTERS.find((c) => c.voiceName === existing.voice)?.name
       topic = existing.topic
       level = existing.level as LevelId
+      pressure = existing.pressure as PressureId
       language = existing.language as LanguageId
     } else {
       // Fresh start — enforce the daily cap, decide the intro, create the row.
@@ -83,7 +87,7 @@ export async function POST(request: Request) {
       includeIntro = totalCount === 0 || Math.random() < 0.28
 
       const created = await prisma.interviewSession.create({
-        data: { userId: user.id, topic, level, language, voice: voiceName, includeIntro, status: 'IN_PROGRESS' },
+        data: { userId: user.id, topic, level, pressure, language, voice: voiceName, includeIntro, status: 'IN_PROGRESS' },
       })
       sessionId = created.id
     }
@@ -113,7 +117,7 @@ export async function POST(request: Request) {
             inputAudioTranscription: {},
             outputAudioTranscription: {},
             sessionResumption: resumeHandle ? { handle: resumeHandle } : {},
-            systemInstruction: buildSystemInstruction(topic, level, { language, includeIntro, personaName }),
+            systemInstruction: buildSystemInstruction(topic, level, { language, includeIntro, personaName, pressure }),
           },
         },
         httpOptions: { apiVersion: 'v1alpha' },

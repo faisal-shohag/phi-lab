@@ -4,6 +4,8 @@ import type { InterviewReport } from '@/lib/interview/report-types'
 import { requireUser } from '@/lib/auth-server'
 import { errorResponse } from '@/lib/interview/errors'
 import { prisma } from '@/lib/prisma'
+import { awardXp } from '@/lib/gamification/award'
+import { interviewXp } from '@/lib/gamification/reasons'
 
 // Generates the post-interview report from the transcript stored server-side.
 // Uses a standard (non-Live) text model so it can return structured JSON via a
@@ -156,6 +158,21 @@ export async function POST(request: Request) {
         endedAt: session.endedAt ?? new Date(),
       },
     })
+
+    // Award XP once per completed interview (idempotent on sessionId). Never let
+    // a gamification hiccup break the report response.
+    try {
+      await awardXp({
+        userId: user.id,
+        reason: 'interview_completed',
+        sourceId: sessionId,
+        amount: interviewXp(report.overallScore, session.pressure),
+        meta: { score: report.overallScore, topic: topicId, pressure: session.pressure },
+      })
+    } catch {
+      // ignore — XP is best-effort
+    }
+
     return Response.json(report)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'

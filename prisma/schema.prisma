@@ -18,14 +18,52 @@ model User {
   email         String
   emailVerified Boolean   @default(false)
   image         String?
+  xp            Int       @default(0)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   sessions      Session[]
   accounts      Account[]
   interviews    InterviewSession[]
+  feynman       FeynmanSession[]
+  english       EnglishSession[]
+  analogies     AnalogyCard[]
+  xpEvents      XpEvent[]
+  badges        UserBadge[]
 
   @@unique([email])
   @@map("user")
+}
+
+// Append-only ledger of every XP grant. `reason` + `sourceId` are unique per
+// user so awards are idempotent (retrying the same interview/quiz step never
+// double-counts). `meta` carries the score/streak used for badge evaluation.
+model XpEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount    Int
+  reason    String
+  sourceId  String
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@unique([userId, reason, sourceId])
+  @@index([userId, createdAt])
+  @@map("xp_event")
+}
+
+// Unlocked achievements. Badge definitions live in code
+// (src/lib/gamification/badges.ts); this only records which user has which.
+model UserBadge {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badgeId   String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, badgeId])
+  @@index([userId])
+  @@map("user_badge")
 }
 
 enum InterviewStatus {
@@ -43,6 +81,7 @@ model InterviewSession {
   language     String          @default("en")
   voice        String          @default("Kore")
   includeIntro Boolean         @default(false)
+  pressure     String          @default("neutral")
   status       InterviewStatus @default(IN_PROGRESS)
   transcript   Json?
   report       Json?
@@ -55,6 +94,73 @@ model InterviewSession {
   @@index([userId, createdAt])
   @@index([userId, topic])
   @@map("interview_session")
+}
+
+// Feynman ("teach-back") lab: the learner explains a concept aloud to an AI
+// that plays a curious beginner. Mirrors InterviewSession but stores a clarity
+// score and a teach-back report instead of an interview score.
+model FeynmanSession {
+  id           String          @id @default(cuid())
+  userId       String
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  concept      String
+  language     String          @default("en")
+  voice        String          @default("Kore")
+  status       InterviewStatus @default(IN_PROGRESS)
+  transcript   Json?
+  report       Json?
+  clarityScore Int?
+  startedAt    DateTime        @default(now())
+  endedAt      DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@index([userId, createdAt])
+  @@map("feynman_session")
+}
+
+// English-for-Developers lab: spoken technical-English practice. The AI plays a
+// role (interviewer, manager, teammate) in a chosen scenario; the report grades
+// the learner's spoken English (fluency, clarity, confidence) with concrete
+// grammar/vocabulary fixes.
+model EnglishSession {
+  id           String          @id @default(cuid())
+  userId       String
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scenario     String
+  voice        String          @default("Kore")
+  status       InterviewStatus @default(IN_PROGRESS)
+  transcript   Json?
+  report       Json?
+  overallScore Int?
+  startedAt    DateTime        @default(now())
+  endedAt      DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@index([userId, createdAt])
+  @@map("english_session")
+}
+
+// Rickshaw Analogies: an AI-generated everyday analogy for a concept, rendered
+// as a shareable card. Cards are readable by anyone with the link (public share
+// pages); only the owner can create/delete.
+model AnalogyCard {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  concept     String
+  language    String   @default("en")
+  title       String
+  scene       String
+  mapping     Json
+  soBasically String
+  techNote    String
+  emoji       String   @default("🛺")
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@map("analogy_card")
 }
 
 model Session {

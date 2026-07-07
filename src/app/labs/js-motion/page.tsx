@@ -84,6 +84,18 @@ import {
 } from '@/components/ui/resizable'
 import { cn } from '@/lib/utils'
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
+import { XpBadge } from '@/components/gamification/xp-badge'
+import { XpHint } from '@/components/gamification/xp-hint'
+import { UserMenu } from '@/components/auth/user-menu'
+import { award as awardXp } from '@/lib/gamification/use-xp'
+
+// Short stable hash of the current program, used to make quiz XP idempotent per
+// (program, step) so re-running the same code can't farm repeat XP.
+function codeHash(src: string): string {
+  let h = 5381
+  for (let i = 0; i < src.length; i++) h = ((h << 5) + h + src.charCodeAt(i)) | 0
+  return (h >>> 0).toString(36)
+}
 
 type PanelView =
   | 'memory' | 'heap' | 'callstack' | 'loops' | 'calls'
@@ -264,13 +276,18 @@ export default function Home() {
     answeredRef.current.add(q.stepIndex)
     setStreak((s) => {
       const ns = correct ? s + 1 : 0
+      // Award XP for a correct answer. sourceId is derived from the code so the
+      // same step in the same program can't be farmed for repeat XP.
+      if (correct) {
+        void awardXp('quiz_correct', `${codeHash(code)}:${q.stepIndex}`, { streak: ns })
+      }
       return ns
     })
     setCurrentIndex(q.stepIndex)
     if (q.stepIndex >= lastIndex && correct) {
       setTimeout(celebrate, 150)
     }
-  }, [activeQuestion, lastIndex, celebrate])
+  }, [activeQuestion, lastIndex, celebrate, code])
 
   const currentStep: Step | undefined = trace?.steps[currentIndex]
   const previousStep: Step | undefined = trace?.steps[currentIndex - 1]
@@ -779,6 +796,8 @@ export default function Home() {
               enabledCount={enabledCount}
             />
             <AnimatedThemeToggler />
+            <XpHint />
+            <XpBadge />
             <Button variant="secondary" className="hidden sm:flex rounded-full">
               <Cpu className="mr-1" />
               {trace ? `${trace.steps.length} steps` : '— steps'}
@@ -795,6 +814,7 @@ export default function Home() {
               <Play className="h-4 w-4 mr-1" />
               Run
             </Button>
+            <UserMenu />
           </div>
         </div>
       </header>

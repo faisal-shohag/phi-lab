@@ -4,9 +4,10 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   FileCode2, Palette, Braces, FileType2, Atom, PanelsTopLeft, Hexagon,
-  Server, KeyRound, Database, Check, Clock, Radio, type LucideIcon,
+  Server, KeyRound, Database, Check, Clock, Radio,
+  HeartHandshake, Briefcase, Gavel, Flame, type LucideIcon,
 } from 'lucide-react'
-import { TOPICS, LEVELS, ROUND_SECONDS, type LevelId } from '@/lib/interview/topics'
+import { TOPICS, LEVELS, PRESSURES, ROUND_SECONDS, type LevelId, type PressureId } from '@/lib/interview/topics'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -14,9 +15,13 @@ const ICONS: Record<string, LucideIcon> = {
   FileCode2, Palette, Braces, FileType2, Atom, PanelsTopLeft, Hexagon, Server, KeyRound, Database,
 }
 
+const PRESSURE_ICONS: Record<string, LucideIcon> = {
+  HeartHandshake, Briefcase, Gavel, Flame,
+}
+
 interface SetupScreenProps {
   /** Advance to the green room to choose voice/language and check the mic. */
-  onContinue: (topic: string, level: LevelId) => void
+  onContinue: (topic: string, level: LevelId, pressure: PressureId) => void
   /** Optional signed-in user name for a friendly greeting. */
   greeting?: string
 }
@@ -24,6 +29,7 @@ interface SetupScreenProps {
 export function SetupScreen({ onContinue, greeting }: SetupScreenProps) {
   const [topic, setTopic] = useState<string | null>(null)
   const [level, setLevel] = useState<LevelId>('medium')
+  const [pressure, setPressure] = useState<PressureId>('neutral')
 
   const canContinue = !!topic
 
@@ -133,6 +139,49 @@ export function SetupScreen({ onContinue, greeting }: SetupScreenProps) {
             })}
           </div>
         </section>
+
+        {/* Pressure / demeanor — the Anxiety Trainer dimension */}
+        <section className="mt-6 border-t pt-6">
+          <h2 className="mb-1 text-sm font-semibold text-muted-foreground">3. Set the pressure</h2>
+          <p className="mb-3 text-[11px] text-muted-foreground">
+            Same questions, different nerves. Ramp up to train composure under a tough panel.
+          </p>
+          <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+            {PRESSURES.map((p) => {
+              const Icon = PRESSURE_ICONS[p.icon] ?? Briefcase
+              const selected = pressure === p.id
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => setPressure(p.id)}
+                  title={p.description}
+                  className={cn(
+                    'group flex flex-col items-start gap-2 rounded-xl border-2 p-3 text-left transition-all duration-150',
+                    selected
+                      ? 'border-transparent text-white shadow-md bg-linear-to-br ' + p.tint
+                      : 'border-border bg-card hover:-translate-y-0.5 hover:border-foreground/30 hover:bg-accent hover:shadow-md',
+                  )}
+                >
+                  <div
+                    className={cn(
+                      'flex h-8 w-8 items-center justify-center rounded-lg transition-colors',
+                      selected ? 'bg-white/20 text-white' : 'bg-muted text-muted-foreground group-hover:text-foreground',
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm font-semibold leading-tight">{p.label}</span>
+                    {selected && <Check className="h-3.5 w-3.5" />}
+                  </div>
+                  <p className={cn('text-[11px] leading-snug', selected ? 'text-white/90' : 'text-muted-foreground')}>
+                    {p.description}
+                  </p>
+                </button>
+              )
+            })}
+          </div>
+        </section>
       </motion.div>
 
       {/* Continue to green room */}
@@ -141,7 +190,7 @@ export function SetupScreen({ onContinue, greeting }: SetupScreenProps) {
           size="lg"
           className="h-12 w-full max-w-xs border-0 bg-linear-to-r from-amber-500 via-fuchsia-500 to-violet-600 text-base text-white shadow-lg shadow-fuchsia-500/25 transition-all hover:shadow-xl hover:shadow-fuchsia-500/30 hover:brightness-105"
           disabled={!canContinue}
-          onClick={() => topic && onContinue(topic, level)}
+          onClick={() => topic && onContinue(topic, level, pressure)}
         >
           Continue
         </Button>

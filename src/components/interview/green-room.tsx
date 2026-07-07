@@ -6,8 +6,8 @@ import { ArrowLeft, Check, Loader2 } from 'lucide-react'
 import { SpeakingOrb } from './speaking-orb'
 import { MicCheck, type MicState } from './mic-check'
 import {
-  CHARACTERS, LANGUAGES, topicById, levelById,
-  type LanguageId, type LevelId,
+  CHARACTERS, LANGUAGES, topicById, levelById, pressureById,
+  type LanguageId, type LevelId, type PressureId,
 } from '@/lib/interview/topics'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -21,18 +21,20 @@ export interface StartOptions {
 interface GreenRoomProps {
   topic: string | null
   level: LevelId | null
+  pressure?: PressureId
   connecting: boolean
   onStart: (opts: StartOptions) => void
   onBack: () => void
 }
 
-export function GreenRoom({ topic, level, connecting, onStart, onBack }: GreenRoomProps) {
+export function GreenRoom({ topic, level, pressure = 'neutral', connecting, onStart, onBack }: GreenRoomProps) {
   const [characterId, setCharacterId] = useState(CHARACTERS[0].id)
   const [language, setLanguage] = useState<LanguageId>('en')
   const [micState, setMicState] = useState<MicState>('unknown')
 
   const topicLabel = topicById(topic ?? '')?.label ?? topic ?? ''
   const levelLabel = levelById(level ?? 'medium')?.label ?? level ?? ''
+  const pressureLabel = pressureById(pressure)?.label ?? ''
   const character = CHARACTERS.find((c) => c.id === characterId) ?? CHARACTERS[0]
   const canStart = micState === 'granted' && !connecting
 
@@ -47,6 +49,11 @@ export function GreenRoom({ topic, level, connecting, onStart, onBack }: GreenRo
         <div className="flex items-center gap-2">
           <Badge variant="secondary">{topicLabel}</Badge>
           <Badge variant="outline">{levelLabel}</Badge>
+          {pressure !== 'neutral' && pressureLabel && (
+            <Badge variant="outline" className="border-rose-300 text-rose-600 dark:border-rose-800 dark:text-rose-300">
+              {pressureLabel}
+            </Badge>
+          )}
           <span className="ml-auto text-xs text-muted-foreground">Green room</span>
         </div>
 

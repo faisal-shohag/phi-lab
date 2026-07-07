@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { History, LogOut, Loader2 } from 'lucide-react'
+import { History, LogOut, Loader2, Trophy } from 'lucide-react'
 import { authClient } from '@/lib/auth-client'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -52,14 +52,13 @@ export function UserMenu({ showHistory = true }: UserMenuProps) {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="flex items-center gap-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+      <DropdownMenuTrigger className="flex items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
         <Avatar>
           {user.image && <AvatarImage src={user.image} alt={user.name ?? 'User'} />}
           <AvatarFallback className="bg-linear-to-br from-amber-500 via-fuchsia-500 to-violet-600 text-xs font-semibold text-white">
             {initials(user.name, user.email)}
           </AvatarFallback>
         </Avatar>
-        <span className="hidden max-w-[120px] truncate text-sm font-medium sm:inline">{user.name || user.email}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-60">
         <DropdownMenuLabel className="flex items-center gap-2.5 py-2">
@@ -75,6 +74,12 @@ export function UserMenu({ showHistory = true }: UserMenuProps) {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link href="/profile">
+            <Trophy className="h-4 w-4" />
+            Achievements
+          </Link>
+        </DropdownMenuItem>
         {showHistory && (
           <DropdownMenuItem asChild>
             <Link href="/labs/interview/history">

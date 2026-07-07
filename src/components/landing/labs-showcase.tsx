@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { Cpu, Mic, ArrowRight } from 'lucide-react'
+import { Cpu, Mic, GraduationCap, Languages, ArrowRight } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Reveal, RevealItem } from './reveal'
@@ -11,6 +11,8 @@ import { cn } from '@/lib/utils'
 
 const JS_MOTION_CHIPS = ['Memory & call stack', 'Heap graph', 'Timeline & breakpoints', 'Quiz mode', 'Shareable links']
 const INTERVIEW_CHIPS = ['10 topics · HTML → MongoDB', 'Live transcript', 'Gemini-powered', 'Score ring + sub-scores']
+const FEYNMAN_CHIPS = ['Teach it out loud', 'AI asks the naive questions', 'Clarity score', 'Mirror test']
+const ENGLISH_CHIPS = ['5 work scenarios', 'Voice roleplay', 'Say-it-better fixes', 'Fluency score']
 
 const CODE_LINES = ['function push(stack, v) {', '  stack.push(v)', '  return stack', '}']
 
@@ -91,8 +93,60 @@ function InterviewMockup() {
   )
 }
 
+function FeynmanMockup() {
+  const animated = useAmbientMotion()
+  return (
+    <div className="mt-5 flex items-center gap-4 rounded-lg border border-border bg-muted/40 p-3">
+      <div className="relative flex h-16 w-16 shrink-0 items-center justify-center">
+        <div className="absolute h-12 w-12 rounded-full bg-linear-to-br from-indigo-500 to-emerald-500 shadow-lg" />
+        {animated && (
+          <motion.div
+            className="absolute h-14 w-14 rounded-full border-2 border-indigo-400/40"
+            animate={{ scale: [1, 1.3, 1], opacity: [0.3, 0, 0.3] }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+          />
+        )}
+      </div>
+      <div className="flex-1 space-y-1.5">
+        <div className="ml-auto max-w-[85%] rounded-xl rounded-br-sm bg-sky-100 px-2.5 py-1.5 text-[11px] text-sky-950 dark:bg-sky-950/50 dark:text-sky-100">
+          A closure remembers its outer variables…
+        </div>
+        <div className="max-w-[85%] rounded-xl rounded-bl-sm bg-violet-100 px-2.5 py-1.5 text-[11px] text-violet-950 dark:bg-violet-950/50 dark:text-violet-100">
+          Wait — remembers them how? Can you show me?
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function EnglishMockup() {
+  const animated = useAmbientMotion()
+  return (
+    <div className="mt-5 flex items-center gap-4 rounded-lg border border-border bg-muted/40 p-3">
+      <div className="relative flex h-16 w-16 shrink-0 items-center justify-center">
+        <div className="absolute h-12 w-12 rounded-full bg-linear-to-br from-sky-500 to-teal-500 shadow-lg" />
+        {animated && (
+          <motion.div
+            className="absolute h-14 w-14 rounded-full border-2 border-sky-400/40"
+            animate={{ scale: [1, 1.3, 1], opacity: [0.3, 0, 0.3] }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+          />
+        )}
+      </div>
+      <div className="flex-1 space-y-1.5">
+        <div className="ml-auto max-w-[90%] rounded-xl rounded-br-sm bg-cyan-100 px-2.5 py-1.5 text-[11px] text-cyan-950 line-through decoration-rose-400/60 dark:bg-cyan-950/50 dark:text-cyan-100">
+          I am agree with this approach.
+        </div>
+        <div className="ml-auto max-w-[90%] rounded-xl rounded-br-sm bg-emerald-100 px-2.5 py-1.5 text-[11px] font-medium text-emerald-950 dark:bg-emerald-950/50 dark:text-emerald-100">
+          I agree with this approach.
+        </div>
+      </div>
+    </div>
+  )
+}
+
 interface LabCardProps {
-  accent: 'amber' | 'violet'
+  accent: 'amber' | 'violet' | 'indigo' | 'cyan'
   icon: React.ReactNode
   title: string
   description: string
@@ -109,13 +163,25 @@ function LabCard({ accent, icon, title, description, chips, href, mockup }: LabC
         transition={{ type: 'spring', stiffness: 300, damping: 22 }}
         className={cn(
           'group flex h-full flex-col rounded-xl border-2 bg-card p-5 shadow-sm transition-colors sm:p-6',
-          accent === 'amber' ? 'border-border hover:border-amber-400' : 'border-border hover:border-violet-400',
+          accent === 'amber'
+            ? 'border-border hover:border-amber-400'
+            : accent === 'indigo'
+              ? 'border-border hover:border-indigo-400'
+              : accent === 'cyan'
+                ? 'border-border hover:border-sky-400'
+                : 'border-border hover:border-violet-400',
         )}
       >
         <div
           className={cn(
             'flex h-10 w-10 items-center justify-center rounded-lg text-white shadow-md',
-            accent === 'amber' ? 'bg-linear-to-br from-amber-500 to-orange-600' : 'bg-linear-to-br from-violet-500 to-fuchsia-600',
+            accent === 'amber'
+              ? 'bg-linear-to-br from-amber-500 to-orange-600'
+              : accent === 'indigo'
+                ? 'bg-linear-to-br from-indigo-500 to-emerald-500'
+                : accent === 'cyan'
+                  ? 'bg-linear-to-br from-sky-500 to-teal-500'
+                  : 'bg-linear-to-br from-violet-500 to-fuchsia-600',
           )}
         >
           {icon}
@@ -148,7 +214,7 @@ export function LabsShowcase() {
   return (
     <section id="labs" className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
       <Reveal className="text-center">
-        <h2 className="text-2xl font-bold sm:text-3xl">Two labs. One goal: make it click.</h2>
+        <h2 className="text-2xl font-bold sm:text-3xl">Four labs. One goal: make it click.</h2>
         <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground sm:text-base">
           Every concept here is something you run, watch, or say — not just something you read.
         </p>
@@ -172,6 +238,24 @@ export function LabsShowcase() {
           chips={INTERVIEW_CHIPS}
           href="/labs/interview"
           mockup={<InterviewMockup />}
+        />
+        <LabCard
+          accent="indigo"
+          icon={<GraduationCap className="h-5 w-5" />}
+          title="Feynman Lab"
+          description="Learn by teaching. Explain a concept out loud to a curious AI beginner that asks the naive questions — then get a clarity score on your explanation."
+          chips={FEYNMAN_CHIPS}
+          href="/labs/feynman"
+          mockup={<FeynmanMockup />}
+        />
+        <LabCard
+          accent="cyan"
+          icon={<Languages className="h-5 w-5" />}
+          title="English Lab"
+          description="Spoken technical English for developers. Roleplay a standup, code review or salary talk with an AI partner, then get a fluency score and say-it-better fixes."
+          chips={ENGLISH_CHIPS}
+          href="/labs/english"
+          mockup={<EnglishMockup />}
         />
       </Reveal>
     </section>
