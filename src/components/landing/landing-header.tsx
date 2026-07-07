@@ -2,6 +2,8 @@
 
 import Link from 'next/link'
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
+import { UserMenu } from '@/components/auth/user-menu'
+import { Logo } from '@/components/brand/logo'
 import { Button } from '@/components/ui/button'
 
 const NAV_LINKS = [
@@ -15,9 +17,7 @@ export function LandingHeader() {
     <header className="sticky top-0 z-40 border-b bg-background/70 backdrop-blur-sm">
       <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-2.5 sm:px-6">
         <Link href="/" className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-linear-to-br from-amber-500 via-fuchsia-500 to-violet-600 shadow-md">
-            <span className="font-mono text-sm font-bold text-white">Φ</span>
-          </div>
+          <Logo className="h-9 w-9" />
           <div>
             <h1 className="text-sm font-bold leading-tight">Phi Lab</h1>
             <p className="text-[11px] leading-tight text-muted-foreground">Programming Hero Instructor Lab</p>
@@ -41,6 +41,7 @@ export function LandingHeader() {
           <Button asChild size="sm" className="hidden sm:inline-flex">
             <a href="#labs">Open a lab</a>
           </Button>
+          <UserMenu />
         </div>
       </div>
     </header>

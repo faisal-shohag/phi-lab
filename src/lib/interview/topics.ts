@@ -18,6 +18,25 @@ export interface Level {
   description: string
 }
 
+export type LanguageId = 'en' | 'bn'
+
+export interface Language {
+  id: LanguageId
+  label: string
+  /** BCP-47 code passed to Gemini speechConfig.languageCode. */
+  speechCode: string
+}
+
+export interface Character {
+  id: string
+  /** Prebuilt Gemini voice name. */
+  voiceName: string
+  name: string
+  description: string
+  /** Tailwind gradient classes for the avatar. */
+  gradient: string
+}
+
 export const TOPICS: Topic[] = [
   { id: 'html', label: 'HTML', icon: 'FileCode2', blurb: 'Semantics, forms, accessibility, the document outline.' },
   { id: 'css', label: 'CSS', icon: 'Palette', blurb: 'Layout, specificity, flexbox & grid, responsive design.' },
@@ -37,8 +56,26 @@ export const LEVELS: Level[] = [
   { id: 'expert', label: 'Expert', description: 'Edge cases, trade-offs, and deep internals.' },
 ]
 
+export const LANGUAGES: Language[] = [
+  { id: 'en', label: 'English', speechCode: 'en-US' },
+  { id: 'bn', label: 'Bengali', speechCode: 'bn-IN' },
+]
+
+/**
+ * Interviewer personas, each mapped to a prebuilt Gemini voice. Voice choice is
+ * independent of language — any character can conduct the round in English or
+ * Bengali.
+ */
+export const CHARACTERS: Character[] = [
+  { id: 'nova', voiceName: 'Kore', name: 'Nova', description: 'Warm and encouraging', gradient: 'from-amber-400 to-orange-500' },
+  { id: 'atlas', voiceName: 'Charon', name: 'Atlas', description: 'Calm and measured', gradient: 'from-sky-500 to-indigo-600' },
+  { id: 'pixel', voiceName: 'Puck', name: 'Pixel', description: 'Upbeat and quick', gradient: 'from-fuchsia-500 to-pink-500' },
+  { id: 'sage', voiceName: 'Orus', name: 'Sage', description: 'Thoughtful and precise', gradient: 'from-emerald-500 to-teal-600' },
+  { id: 'lyra', voiceName: 'Aoede', name: 'Lyra', description: 'Bright and friendly', gradient: 'from-violet-500 to-purple-600' },
+]
+
 /** Length of a single interview round, in seconds. */
-export const ROUND_SECONDS = 120
+export const ROUND_SECONDS = 180
 
 export function topicById(id: string): Topic | undefined {
   return TOPICS.find((t) => t.id === id)
@@ -48,19 +85,41 @@ export function levelById(id: string): Level | undefined {
   return LEVELS.find((l) => l.id === id)
 }
 
+export function languageById(id: string): Language | undefined {
+  return LANGUAGES.find((l) => l.id === id)
+}
+
+export function characterById(id: string): Character | undefined {
+  return CHARACTERS.find((c) => c.id === id)
+}
+
+export interface SystemInstructionOptions {
+  language?: LanguageId
+  /** When true, open with a brief "tell me about yourself" icebreaker. */
+  includeIntro?: boolean
+  /** Persona name the interviewer may use to introduce themselves. */
+  personaName?: string
+}
+
 /**
  * System instruction for the live interviewer persona. Kept deliberately tight:
  * the model must ask one short question at a time and never lecture, because the
- * whole round is only two minutes of spoken conversation.
+ * whole round is only three minutes of spoken conversation.
  */
-export function buildSystemInstruction(topicId: string, level: LevelId): string {
+export function buildSystemInstruction(
+  topicId: string,
+  level: LevelId,
+  opts: SystemInstructionOptions = {},
+): string {
+  const { language = 'en', includeIntro = false, personaName } = opts
   const topic = topicById(topicId)
   const lvl = levelById(level)
   const topicLabel = topic?.label ?? topicId
   const levelLabel = lvl?.label ?? level
 
-  return [
+  const lines: string[] = [
     `You are a friendly but rigorous senior software engineer conducting a live, spoken technical interview about ${topicLabel}.`,
+    ...(personaName ? [`Your name is ${personaName}; you may introduce yourself briefly by that name.`] : []),
     `The difficulty level is ${levelLabel}: ${lvl?.description ?? ''}`.trim(),
     '',
     'Rules for how you speak:',
@@ -70,8 +129,26 @@ export function buildSystemInstruction(topicId: string, level: LevelId): string 
     '- If the candidate is stuck, offer one small hint, then continue.',
     '- Do not read out code character by character; keep it verbal and natural.',
     `- Progressively probe deeper within the ${levelLabel} level as the candidate answers.`,
+  ]
+
+  if (language === 'bn') {
+    lines.push(
+      '- Conduct the ENTIRE interview in Bengali (Bangla). Speak naturally and fluently in Bengali; technical terms and code keywords may remain in English where that is normal.',
+    )
+  }
+
+  if (includeIntro) {
+    lines.push(
+      '',
+      "Start with a brief icebreaker: ask the candidate to introduce themselves in about twenty seconds (a quick 'tell me about yourself'). Acknowledge their answer in one sentence, then move on to technical questions.",
+    )
+  }
+
+  lines.push(
     '',
-    'The entire round lasts about 2 minutes. When you are told that time is up, thank the candidate warmly in one sentence and stop asking questions.',
+    'The entire round lasts about 3 minutes. When you are told that time is up, thank the candidate warmly in one sentence and stop asking questions.',
     'Begin only when the candidate speaks or when prompted to start.',
-  ].join('\n')
+  )
+
+  return lines.join('\n')
 }

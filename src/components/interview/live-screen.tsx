@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowDown, Mic, MicOff, PhoneOff } from 'lucide-react'
+import { ArrowDown, Loader2, Mic, MicOff, PhoneOff, Wifi } from 'lucide-react'
 import { SpeakingOrb } from './speaking-orb'
 import { CountdownRing } from './countdown-ring'
 import { useAnalyserLevel } from './use-analyser-level'
@@ -24,6 +24,8 @@ interface LiveScreenProps {
   modelSpeaking: boolean
   micAnalyser: AnalyserNode | null
   outputAnalyser: AnalyserNode | null
+  connecting?: boolean
+  reconnecting?: boolean
   onMute: () => void
   onEnd: () => void
 }
@@ -31,7 +33,7 @@ interface LiveScreenProps {
 export function LiveScreen(props: LiveScreenProps) {
   const {
     topic, level, secondsLeft, transcript, muted, modelSpeaking,
-    micAnalyser, outputAnalyser, onMute, onEnd,
+    micAnalyser, outputAnalyser, connecting, reconnecting, onMute, onEnd,
   } = props
 
   const { level: outLevel } = useAnalyserLevel(outputAnalyser, modelSpeaking)
@@ -45,13 +47,17 @@ export function LiveScreen(props: LiveScreenProps) {
   const topicLabel = topicById(topic ?? '')?.label ?? topic ?? ''
   const levelLabel = levelById(level ?? 'medium')?.label ?? level ?? ''
 
-  const statusText = modelSpeaking
-    ? 'Interviewer is speaking…'
-    : candidateSpeaking
-      ? 'Listening to you…'
-      : muted
-        ? 'You are muted'
-        : 'Your turn — go ahead'
+  const statusText = reconnecting
+    ? 'Reconnecting…'
+    : connecting
+      ? 'Connecting…'
+      : modelSpeaking
+        ? 'Interviewer is speaking…'
+        : candidateSpeaking
+          ? 'Listening to you…'
+          : muted
+            ? 'You are muted'
+            : 'Your turn — go ahead'
 
   // Auto-scroll the transcript feed — but only while the user is at the
   // bottom. If they've scrolled up to re-read something, leave them there and
@@ -81,7 +87,21 @@ export function LiveScreen(props: LiveScreenProps) {
   }, [])
 
   return (
-    <div className="mx-auto grid h-[calc(100dvh-4.5rem)] w-full max-w-5xl grid-cols-1 grid-rows-[auto_1fr] gap-4 px-4 py-6 lg:grid-cols-[minmax(0,360px)_1fr] lg:grid-rows-[1fr]">
+    <div className="relative mx-auto grid h-[calc(100dvh-4.5rem)] w-full max-w-5xl grid-cols-1 grid-rows-[auto_1fr] gap-4 px-4 py-6 lg:grid-cols-[minmax(0,360px)_1fr] lg:grid-rows-[1fr]">
+      <AnimatePresence>
+        {reconnecting && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="absolute inset-x-0 top-2 z-20 mx-auto flex w-fit items-center gap-2 rounded-full border-2 border-amber-300 bg-amber-50 px-4 py-1.5 text-sm font-medium text-amber-900 shadow-md dark:border-amber-800 dark:bg-amber-950/70 dark:text-amber-100"
+          >
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <Wifi className="h-3.5 w-3.5" />
+            Connection lost — reconnecting…
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Left: orb + controls */}
       <div className="flex flex-col items-center gap-6 overflow-y-auto rounded-2xl border-2 border-border bg-card p-6 shadow-sm">
         <div className="flex items-center gap-2 self-start">
@@ -92,8 +112,8 @@ export function LiveScreen(props: LiveScreenProps) {
           <Badge variant="outline">{levelLabel}</Badge>
         </div>
 
-        <div className="relative flex h-56 w-56 items-center justify-center">
-          <SpeakingOrb level={orbLevel} speaker={speaker} className="absolute inset-0" />
+        <div className={cn('relative flex h-56 w-56 items-center justify-center transition-opacity', reconnecting && 'opacity-40')}>
+          <SpeakingOrb level={reconnecting ? 0.02 : orbLevel} speaker={reconnecting ? 'idle' : speaker} className="absolute inset-0" />
         </div>
 
         <div className="text-center">
@@ -170,7 +190,7 @@ export function LiveScreen(props: LiveScreenProps) {
                     </span>
                     <div
                       className={cn(
-                        'max-w-[85%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed',
+                        'font-bn max-w-[85%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed',
                         isCandidate
                           ? 'rounded-br-sm bg-rose-50 text-rose-950 dark:bg-rose-950/40 dark:text-rose-100'
                           : 'rounded-bl-sm bg-violet-50 text-violet-950 dark:bg-violet-950/40 dark:text-violet-100',

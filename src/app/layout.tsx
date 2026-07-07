@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono, Noto_Sans_Bengali } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -9,6 +9,13 @@ const inter = Inter({subsets:['latin'],variable:'--font-sans'});
 const jetbrainsMono = JetBrains_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+  display: "swap",
+});
+// Bengali glyphs (interview transcript + report when the round is in Bengali).
+// Latin still renders in Inter via per-glyph fallback; Noto only covers Bengali.
+const notoSansBengali = Noto_Sans_Bengali({
+  variable: "--font-bengali",
+  subsets: ["bengali"],
   display: "swap",
 });
 
@@ -35,7 +42,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={cn("h-full", "antialiased", "font-sans", inter.variable, jetbrainsMono.variable)}  suppressHydrationWarning
+      className={cn("h-full", "antialiased", "font-sans", inter.variable, jetbrainsMono.variable, notoSansBengali.variable)}  suppressHydrationWarning
     >
       <body className="bg-background text-foreground">
           <ThemeProvider

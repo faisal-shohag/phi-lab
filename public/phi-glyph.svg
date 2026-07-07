@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Phi Lab">
+  <defs>
+    <linearGradient id="phiGlyph" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f59e0b"/>
+      <stop offset="0.5" stop-color="#d946ef"/>
+      <stop offset="1" stop-color="#7c3aed"/>
+    </linearGradient>
+  </defs>
+  <!-- Gradient Phi/P monogram on a transparent background. -->
+  <circle cx="32" cy="32" r="14" fill="none" stroke="url(#phiGlyph)" stroke-width="6"/>
+  <rect x="28.75" y="9" width="6.5" height="46" rx="3.25" fill="url(#phiGlyph)"/>
+</svg>

@@ -1,9 +1,14 @@
 import { GoogleGenAI, Type } from '@google/genai'
-import { topicById, levelById, type LevelId } from '@/lib/interview/topics'
+import { topicById, levelById, type LevelId, type LanguageId } from '@/lib/interview/topics'
+import type { InterviewReport } from '@/lib/interview/report-types'
+import { requireUser } from '@/lib/auth-server'
+import { errorResponse } from '@/lib/interview/errors'
+import { prisma } from '@/lib/prisma'
 
-// Generates the post-interview report from the full transcript. This uses a
-// standard (non-Live) text model so it can return structured JSON via a
-// responseSchema — swap REPORT_MODEL to change which model scores the round.
+// Generates the post-interview report from the transcript stored server-side.
+// Uses a standard (non-Live) text model so it can return structured JSON via a
+// responseSchema. The report is persisted on the session row; re-calling this
+// route with the same sessionId is how the "Try again" retry works.
 
 const REPORT_MODEL = 'gemini-3.1-flash-lite'
 
@@ -13,20 +18,7 @@ interface TurnEntry {
   text: string
 }
 
-export interface InterviewReport {
-  overallScore: number
-  verdict: string
-  scores: {
-    communication: number
-    technicalDepth: number
-    accuracy: number
-  }
-  strengths: string[]
-  improvements: string[]
-  perQuestion: { question: string; feedback: string; rating: number }[]
-  suggestions: string[]
-  summary: string
-}
+export type { InterviewReport }
 
 const REPORT_SCHEMA = {
   type: Type.OBJECT,
@@ -81,27 +73,44 @@ function notEnoughSignal(topicLabel: string): InterviewReport {
 
 export async function POST(request: Request) {
   const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) {
-    return Response.json({ error: 'GEMINI_API_KEY is not configured on the server.' }, { status: 500 })
-  }
+  if (!apiKey) return errorResponse('SERVER_ERROR', 'GEMINI_API_KEY is not configured on the server.')
 
-  let body: { topic?: string; level?: string; transcript?: TurnEntry[] }
+  const user = await requireUser()
+  if (!user) return errorResponse('AUTH_REQUIRED')
+
+  let sessionId = ''
   try {
-    body = await request.json()
+    const body = await request.json()
+    if (typeof body?.sessionId === 'string') sessionId = body.sessionId
   } catch {
-    return Response.json({ error: 'Invalid JSON body.' }, { status: 400 })
+    return errorResponse('SERVER_ERROR', 'Invalid JSON body.')
+  }
+  if (!sessionId) return errorResponse('NOT_FOUND', 'No interview session was provided.')
+
+  const session = await prisma.interviewSession.findUnique({ where: { id: sessionId } })
+  if (!session || session.userId !== user.id) return errorResponse('NOT_FOUND')
+
+  // Idempotent: if we already scored this session, just return it.
+  if (session.status === 'COMPLETED' && session.report) {
+    return Response.json(session.report as unknown as InterviewReport)
   }
 
-  const topicId = body.topic ?? ''
-  const level = (body.level ?? 'medium') as LevelId
-  const transcript = Array.isArray(body.transcript) ? body.transcript : []
+  const topicId = session.topic
+  const level = session.level as LevelId
+  const language = session.language as LanguageId
+  const transcript = (Array.isArray(session.transcript) ? session.transcript : []) as unknown as TurnEntry[]
 
   const topicLabel = topicById(topicId)?.label ?? (topicId || 'the topic')
   const levelLabel = levelById(level)?.label ?? level
 
-  const candidateTurns = transcript.filter((t) => t.role === 'candidate' && t.text.trim().length > 0)
+  const candidateTurns = transcript.filter((t) => t?.role === 'candidate' && t?.text?.trim().length > 0)
   if (candidateTurns.length < 2) {
-    return Response.json(notEnoughSignal(topicLabel))
+    const report = notEnoughSignal(topicLabel)
+    await prisma.interviewSession.update({
+      where: { id: sessionId },
+      data: { report: report as unknown as object, overallScore: 0, status: 'COMPLETED', endedAt: session.endedAt ?? new Date() },
+    })
+    return Response.json(report)
   }
 
   const dialogue = transcript
@@ -111,33 +120,46 @@ export async function POST(request: Request) {
   const prompt = [
     `You are grading a short live technical interview about ${topicLabel} at the ${levelLabel} level.`,
     'Below is the full transcript. Score the CANDIDATE only (the interviewer is the AI).',
-    'Be fair but honest. Base scores strictly on what the candidate actually said. It was a short 2-minute round, so calibrate expectations accordingly.',
+    'Be fair but honest. Base scores strictly on what the candidate actually said. It was a short 3-minute round, so calibrate expectations accordingly.',
     'For perQuestion, include one entry per distinct question the interviewer asked that the candidate responded to.',
+    language === 'bn'
+      ? 'Write EVERY string in the report (verdict, strengths, improvements, feedback, suggestions, summary) in Bengali (Bangla). Technical terms may stay in English.'
+      : '',
     '',
     'Transcript:',
     dialogue,
-  ].join('\n')
+  ]
+    .filter(Boolean)
+    .join('\n')
 
   try {
     const ai = new GoogleGenAI({ apiKey })
     const response = await ai.models.generateContent({
       model: REPORT_MODEL,
       contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: REPORT_SCHEMA,
-      },
+      config: { responseMimeType: 'application/json', responseSchema: REPORT_SCHEMA },
     })
 
     const text = response.text
     if (!text) {
-      return Response.json({ error: 'The model returned an empty report.' }, { status: 502 })
+      await prisma.interviewSession.update({ where: { id: sessionId }, data: { status: 'FAILED' } })
+      return errorResponse('REPORT_FAILED', 'The model returned an empty report.')
     }
 
     const report = JSON.parse(text) as InterviewReport
+    await prisma.interviewSession.update({
+      where: { id: sessionId },
+      data: {
+        report: report as unknown as object,
+        overallScore: report.overallScore,
+        status: 'COMPLETED',
+        endedAt: session.endedAt ?? new Date(),
+      },
+    })
     return Response.json(report)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
-    return Response.json({ error: `Failed to generate report: ${message}` }, { status: 500 })
+    await prisma.interviewSession.update({ where: { id: sessionId }, data: { status: 'FAILED' } }).catch(() => {})
+    return errorResponse('REPORT_FAILED', `Failed to generate report: ${message}`)
   }
 }

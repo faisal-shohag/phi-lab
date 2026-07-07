@@ -22,9 +22,39 @@ model User {
   updatedAt     DateTime  @updatedAt
   sessions      Session[]
   accounts      Account[]
+  interviews    InterviewSession[]
 
   @@unique([email])
   @@map("user")
+}
+
+enum InterviewStatus {
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
+model InterviewSession {
+  id           String          @id @default(cuid())
+  userId       String
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topic        String
+  level        String
+  language     String          @default("en")
+  voice        String          @default("Kore")
+  includeIntro Boolean         @default(false)
+  status       InterviewStatus @default(IN_PROGRESS)
+  transcript   Json?
+  report       Json?
+  overallScore Int?
+  startedAt    DateTime        @default(now())
+  endedAt      DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([userId, topic])
+  @@map("interview_session")
 }
 
 model Session {

@@ -2,7 +2,7 @@
 
 import { motion } from 'framer-motion'
 import { Sparkles, TrendingUp, ThumbsUp, Lightbulb, RotateCcw, Repeat } from 'lucide-react'
-import type { InterviewReport } from '@/app/api/interview/report/route'
+import type { InterviewReport } from '@/lib/interview/report-types'
 import { topicById, levelById, type LevelId } from '@/lib/interview/topics'
 import { Button } from '@/components/ui/button'
 import {
@@ -14,8 +14,9 @@ interface ReportScreenProps {
   report: InterviewReport
   topic: string | null
   level: LevelId | null
-  onNew: () => void
-  onRetry: () => void
+  /** Omit both actions for a read-only history view. */
+  onNew?: () => void
+  onRetry?: () => void
 }
 
 function scoreColor(v: number, max: number): string {
@@ -83,7 +84,7 @@ export function ReportScreen({ report, topic, level, onNew, onRetry }: ReportScr
   const levelLabel = levelById(level ?? 'medium')?.label ?? level ?? ''
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-8">
+    <div className="font-bn mx-auto w-full max-w-3xl px-4 py-8">
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="text-center">
         <div className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
           <Sparkles className="h-3.5 w-3.5" /> {topicLabel} · {levelLabel}
@@ -175,14 +176,20 @@ export function ReportScreen({ report, topic, level, onNew, onRetry }: ReportScr
       )}
 
       {/* Actions */}
-      <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-        <Button size="lg" variant="outline" onClick={onNew}>
-          <RotateCcw className="mr-1.5" /> New interview
-        </Button>
-        <Button size="lg" onClick={onRetry}>
-          <Repeat className="mr-1.5" /> Retry same topic
-        </Button>
-      </div>
+      {(onNew || onRetry) && (
+        <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+          {onNew && (
+            <Button size="lg" variant="outline" onClick={onNew}>
+              <RotateCcw className="mr-1.5" /> New interview
+            </Button>
+          )}
+          {onRetry && (
+            <Button size="lg" onClick={onRetry}>
+              <Repeat className="mr-1.5" /> Retry same topic
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
