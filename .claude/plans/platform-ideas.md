@@ -1,5 +1,24 @@
 # Phi Lab — Feature Idea Bank
 
+## ROUND 6 — AI-era skills, content formats, creator economy, competition
+
+1. **AI-Collaboration Lab** — teach the #1 new job skill: writing specs for AI, reviewing AI output, catching hallucinations, when to trust vs verify. No platform teaches "how to work with AI" as curriculum.
+2. **Spot-the-AI-Bug Daily** — daily snippet of AI-generated code with one subtle hallucinated bug; find it in 60 seconds. Trains exactly the review skill AI era demands.
+3. **Code Shorts Feed** — TikTok-style vertical swipe feed: 30-second concept animations + one-tap quiz. Converts doomscrolling time into learning; mobile-native Gen Z format.
+4. **Learner Creator Economy** — learners record voice explainer over visualizer steps, publish as lesson, earn points/revenue share when others learn from it. Best explainers surface; platform content grows itself.
+5. **Ranked Ladder (code e-sports)** — ELO-rated 1v1 code duels, seasons, Bronze→Grandmaster ranks, spectate top matches. Valorant progression psychology applied to learning.
+6. **Learning Wrapped** — monthly/yearly shareable recap: concepts mastered, streak, percentile, biggest comeback. Spotify-Wrapped viral loop.
+7. **Interview Anxiety Trainer** — graded exposure therapy: friendly AI first, then neutral, then stern panel, then interruptions. Confidence is half the interview; nobody trains it.
+8. **Bengali Voice-to-Code** — absolute beginner speaks intent in Bengali, code appears with explanation. Removes English barrier at entry point entirely.
+9. **Comic Concept Series** — auto-generated comic strips explaining concepts with Bengali humor; shareable, printable for classrooms.
+10. **30-Day Public Build Challenge** — cohort ships daily, public progress page, finishers featured. Accountability + portfolio + community in one.
+11. **Learn-to-Earn Micro-Scholarships** — telco/company sponsors: milestone completion earns data packs, course credits. Removes cost barrier, sponsors get talent pipeline visibility.
+12. **Skill Passport** — learner owns full record: export API, verifiable JSON, works with any employer/platform. Data ownership as trust signal.
+13. **IoT Starter Lab** — cheap ESP32 kit pairs with browser lab via WebSerial; JS code blinks real LEDs. Physical results = strongest beginner motivation known.
+14. **Accessibility Pack** — dyslexia-friendly fonts, tuned screen-reader flow for visualizer, colorblind-safe palettes, reduced-motion mode. Widens funnel, mostly one-time cost.
+
+---
+
 ## ROUND 5 — AI-native frontier, teachers/institutions, new interfaces
 
 1. **AI Apprentice (teach the agent)** — inversion of tutoring: learner TEACHES an AI agent that starts knowing nothing; agent may only use what learner taught it, then attempts test problems. Agent's score = proof of learner's understanding. Deeper than Feynman mode — knowledge actually executes.
