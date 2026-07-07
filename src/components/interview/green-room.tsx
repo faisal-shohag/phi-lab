@@ -127,7 +127,7 @@ export function GreenRoom({ topic, level, connecting, onStart, onBack }: GreenRo
           </Button>
           <Button
             size="lg"
-            className="h-11 flex-1 text-base"
+            className="h-11 flex-1 text-base bg-linear-to-r from-pink-500 to-red-500"
             disabled={!canStart}
             onClick={() => onStart({ language, characterId })}
           >

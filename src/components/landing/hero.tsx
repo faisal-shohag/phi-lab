@@ -93,7 +93,7 @@ export function Hero() {
             transition={{ delay: 0.36 }}
             className="mt-7 flex flex-col gap-3 sm:flex-row"
           >
-            <Button asChild size="lg" className="h-12 text-base">
+            <Button asChild size="lg" className="h-12 text-base bg-linear-to-r from-pink-500 to-red-500">
               <Link href="/labs/js-motion">
                 <Cpu className="mr-1.5" /> Step through code
               </Link>

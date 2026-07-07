@@ -16,6 +16,9 @@ export type FeatureKey =
   | 'heapGraph'
   | 'callStack'
   | 'complexityMeter'
+  | 'heatTrail'
+  | 'flameGraph'
+  | 'aliasWires'
 
 export type VisualizerSettings = Record<FeatureKey, boolean>
 
@@ -31,6 +34,9 @@ export const DEFAULT_SETTINGS: VisualizerSettings = {
   heapGraph: false,
   callStack: true,
   complexityMeter: true,
+  heatTrail: false,
+  flameGraph: false,
+  aliasWires: false,
 }
 
 export interface FeatureMeta {
@@ -79,9 +85,27 @@ export const FEATURE_META: FeatureMeta[] = [
     group: 'Understanding',
   },
   {
+    key: 'heatTrail',
+    label: 'Heat trail',
+    blurb: "See each variable's value change across the whole run as a heat lane — click any point to jump there.",
+    group: 'Understanding',
+  },
+  {
+    key: 'aliasWires',
+    label: 'Aliasing',
+    blurb: 'Highlight when two variables point at the same array/object — spot aliasing at a glance.',
+    group: 'Understanding',
+  },
+  {
     key: 'flowChart',
     label: 'Flow chart',
     blurb: 'A live flowchart of branches, loops, and calls — the active node lights up.',
+    group: 'Concepts',
+  },
+  {
+    key: 'flameGraph',
+    label: 'Flame graph',
+    blurb: 'A profiler-style flame graph of every call — bar width = steps spent, nesting = call depth. Hover to jump.',
     group: 'Concepts',
   },
   {

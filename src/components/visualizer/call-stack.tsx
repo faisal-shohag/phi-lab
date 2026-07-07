@@ -6,6 +6,9 @@ import { cn } from '@/lib/utils'
 import type { FrameSnapshot, HeapSnapshot, Step } from '@/lib/visualizer/types'
 import { VariableCard } from './code-viewer'
 
+// Palette for alias groups — one color per heap object shared by ≥2 variables.
+const ALIAS_COLORS = ['#0ea5e9', '#f97316', '#a855f7', '#10b981', '#ec4899', '#eab308']
+
 interface MemoryPanelProps {
   step?: Step
   heap: Map<number, HeapSnapshot>
@@ -15,16 +18,33 @@ interface MemoryPanelProps {
   indexPointers: Map<string, Map<number, string[]>>
   // Render numeric arrays as bar charts.
   barMode: boolean
+  // When true, mark variables that reference the same heap object (aliasing).
+  aliasWires?: boolean
 }
 
 // Renders the call stack innermost-frame-first, each frame showing its own
 // variables — a debugger-style scoped memory view.
-export function MemoryPanel({ step, heap, changed, indexPointers, barMode }: MemoryPanelProps) {
+export function MemoryPanel({ step, heap, changed, indexPointers, barMode, aliasWires }: MemoryPanelProps) {
   const frames = step?.frames ?? []
   // Innermost (top of stack) first, global last.
   const ordered = [...frames].reverse()
 
   const anyVars = frames.some((f) => f.vars.length > 0)
+
+  // A heap id is "aliased" when two or more variables (across all frames)
+  // reference it — e.g. an array passed into a function shares its identity
+  // with the caller's variable. Assign each such id a stable color.
+  const aliasColorById = new Map<number, string>()
+  if (aliasWires) {
+    const count = new Map<number, number>()
+    for (const f of frames) {
+      for (const v of f.vars) {
+        if (v.value.t === 'ref') count.set(v.value.id, (count.get(v.value.id) ?? 0) + 1)
+      }
+    }
+    const aliased = [...count.entries()].filter(([, c]) => c >= 2).map(([id]) => id).sort((a, b) => a - b)
+    aliased.forEach((id, i) => aliasColorById.set(id, ALIAS_COLORS[i % ALIAS_COLORS.length]))
+  }
 
   return (
     <div className="flex flex-col gap-2">
@@ -49,6 +69,7 @@ export function MemoryPanel({ step, heap, changed, indexPointers, barMode }: Mem
               focus={step?.focus}
               indexPointers={indexPointers}
               barMode={barMode}
+              aliasColorById={aliasColorById}
             />
           )
         })}
@@ -66,6 +87,7 @@ function FrameGroup({
   focus,
   indexPointers,
   barMode,
+  aliasColorById,
 }: {
   frame: FrameSnapshot
   heap: Map<number, HeapSnapshot>
@@ -75,6 +97,7 @@ function FrameGroup({
   focus?: Step['focus']
   indexPointers: Map<string, Map<number, string[]>>
   barMode: boolean
+  aliasColorById: Map<number, string>
 }) {
   return (
     <motion.div
@@ -108,6 +131,8 @@ function FrameGroup({
           <AnimatePresence mode="popLayout" initial={false}>
             {frame.vars.map((v) => {
               const arrPointers = indexPointers.get(v.name)
+              const aliasId = v.value.t === 'ref' ? v.value.id : undefined
+              const aliasColor = aliasId != null ? aliasColorById.get(aliasId) : undefined
               return (
                 <VariableCard
                   key={v.name}
@@ -121,6 +146,8 @@ function FrameGroup({
                   recentlyChanged={changed.has(`${frame.name}:${v.name}`)}
                   indexPointers={isTop ? arrPointers : undefined}
                   barMode={barMode}
+                  aliasColor={aliasColor}
+                  aliasId={aliasColor ? aliasId : undefined}
                 />
               )
             })}

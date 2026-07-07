@@ -351,9 +351,9 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
 
   function pushStep(partial: Omit<Step, 'frames' | 'heap' | 'depth'>) {
     if (steps.length >= maxSteps) {
-      throw new Error(
-        `Execution exceeded ${maxSteps} steps. The visualization engine refuses to run code that may be infinite.`,
-      )
+      // Don't discard the run — unwind cleanly and keep the partial trace so the
+      // UI can still show what happened up to the limit (see main, below).
+      throw new StepLimitSignal()
     }
     const { frames, heap } = snapshotState()
     const step: Step = { ...partial, frames, heap, depth: callStack.length - 1 }
@@ -988,7 +988,14 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
       case 'split': return (sep: string) => s.split(sep)
       case 'includes': return (x: string) => s.includes(x)
       case 'indexOf': return (x: string) => s.indexOf(x)
-      case 'repeat': return (n: number) => s.repeat(n)
+      case 'repeat': return (n: number) => {
+        // repeat runs in one step but can allocate an enormous string and hang
+        // the tab, so cap it with a friendly error instead of freezing.
+        if (n > 100000) {
+          throw new Error(`.repeat(${n}) would build a huge string. Try a count of 100000 or less.`)
+        }
+        return s.repeat(n)
+      }
       case 'trim': return () => s.trim()
       default: throw new Error(`Unsupported string method: ${name}`)
     }
@@ -1249,7 +1256,13 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
         try {
           execStmt(node.block, scope)
         } catch (e: unknown) {
-          if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal) throw e
+          if (
+            e instanceof ReturnSignal ||
+            e instanceof BreakSignal ||
+            e instanceof ContinueSignal ||
+            e instanceof StepLimitSignal
+          )
+            throw e
           if (node.handler) {
             const catchScope = newScope(scope, 'catch')
             if (node.handler.param) {
@@ -1304,16 +1317,6 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
     throw new ParseError(`Parse error: ${err.message}`, err.loc?.line ?? 1, err.loc?.column ?? 0, err.pos ?? 0)
   }
 
-  try {
-    execBody(ast, globalScope)
-  } catch (e) {
-    if (e instanceof ReturnSignal) {
-      // top-level return, ignore
-    } else {
-      throw e
-    }
-  }
-
   // ---- event loop: drain queues after synchronous code finishes -----------
   function drainMicrotasks() {
     while (microtaskQueue.length) {
@@ -1323,7 +1326,7 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
       t.run()
     }
   }
-  if (usedAsync) {
+  function runEventLoop() {
     drainMicrotasks()
     while (webApiTimers.length || macrotaskQueue.length) {
       if (macrotaskQueue.length === 0) {
@@ -1344,13 +1347,47 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
     asyncPhase = 'sync'
   }
 
-  // Always add a final "done" step so the UI has a clean terminal frame.
+  // Run the program. A StepLimitSignal means we hit the step cap — likely an
+  // infinite loop or runaway recursion. We keep the partial trace and diagnose
+  // it rather than throwing everything away.
+  let truncated = false
+  let stackOverflow = false
+  try {
+    execBody(ast, globalScope)
+    if (usedAsync) runEventLoop()
+  } catch (e) {
+    if (e instanceof ReturnSignal) {
+      // top-level return, ignore
+    } else if (e instanceof StepLimitSignal) {
+      truncated = true
+    } else if (e instanceof RangeError && /call stack/i.test(e.message)) {
+      // Native call-stack overflow — almost always runaway recursion. Keep the
+      // partial trace so the user can watch the stack grow toward the overflow.
+      truncated = true
+      stackOverflow = true
+    } else {
+      throw e
+    }
+  }
+
+  const stopReason = !truncated
+    ? undefined
+    : stackOverflow
+      ? 'Ran out of call-stack space — this is runaway recursion. Make sure every path reaches a base case that returns without calling itself again.'
+      : diagnoseTruncation(steps, maxSteps)
+
+  // Add a final terminal step so the UI has a clean last frame — labeled to
+  // reflect whether we finished or were stopped at the limit.
   {
     const { frames, heap } = snapshotState()
     const done: Step = {
       kind: 'expr',
       line: lines.length,
-      description: 'Execution finished',
+      description: truncated
+        ? stackOverflow
+          ? 'Stopped — call stack overflowed (runaway recursion)'
+          : `Stopped — reached the ${maxSteps}-step limit`
+        : 'Execution finished',
       frames,
       heap,
       depth: 0,
@@ -1362,7 +1399,19 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
   const indexVars: Record<string, string[]> = {}
   for (const [arr, set] of indexVarsMap) indexVars[arr] = [...set]
 
-  return { steps, lines, outputCount, indexVars, hoisting: computeHoisting(ast), hasAsync: usedAsync }
+  const warnings = computeWarnings(ast)
+
+  return {
+    steps,
+    lines,
+    outputCount,
+    indexVars,
+    hoisting: computeHoisting(ast),
+    hasAsync: usedAsync,
+    truncated,
+    stopReason,
+    warnings: warnings.length ? warnings : undefined,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1467,6 +1516,111 @@ class ReturnSignal {
 }
 class BreakSignal {}
 class ContinueSignal {}
+// Thrown from pushStep when the step cap is reached; unwinds the whole run so
+// the caller can keep the partial trace instead of losing everything.
+class StepLimitSignal {}
+
+// Look at the tail of a truncated run and decide whether it reads more like an
+// infinite loop or runaway recursion, then return an actionable suggestion.
+function diagnoseTruncation(steps: Step[], maxSteps: number): string {
+  const tail = steps.slice(-60)
+  const loopish = tail.filter((s) => s.kind.startsWith('loop')).length
+  const callish = tail.filter((s) => s.kind === 'call' || s.kind === 'enter').length
+  const maxDepth = steps.slice(-120).reduce((m, s) => Math.max(m, s.depth), 0)
+  const prefix = `Stopped after ${maxSteps} steps. `
+  if (callish >= loopish && maxDepth > 6) {
+    return (
+      prefix +
+      `This looks like runaway recursion (call depth reached ${maxDepth}). ` +
+      'Make sure every path hits a base case that returns without calling itself again.'
+    )
+  }
+  if (loopish > 0) {
+    return (
+      prefix +
+      'This looks like an infinite (or very long) loop. Check that the loop condition ' +
+      'eventually becomes false and that you update the counter each iteration.'
+    )
+  }
+  return (
+    prefix +
+    'The program produced too many steps to visualize. Try smaller inputs or fewer iterations.'
+  )
+}
+
+// Cheap static hints surfaced as gentle, non-blocking suggestions. We keep this
+// conservative — only flag patterns that are almost always mistakes.
+function computeWarnings(ast: any): string[] {
+  const warnings: string[] = []
+  const seen = new Set<string>()
+  const add = (msg: string) => {
+    if (!seen.has(msg)) {
+      seen.add(msg)
+      warnings.push(msg)
+    }
+  }
+
+  // Does a subtree contain a break/return that could exit the current loop?
+  // (A return inside a nested function does NOT count, so we stop at fn bounds.)
+  const hasLoopExit = (node: any): boolean => {
+    if (!node || typeof node !== 'object') return false
+    if (Array.isArray(node)) return node.some(hasLoopExit)
+    if (typeof node.type !== 'string') return false
+    if (node.type === 'BreakStatement' || node.type === 'ReturnStatement' || node.type === 'ThrowStatement') return true
+    // Don't descend into nested loops (their break belongs to them) or functions.
+    if (
+      node.type === 'FunctionDeclaration' ||
+      node.type === 'FunctionExpression' ||
+      node.type === 'ArrowFunctionExpression' ||
+      node.type === 'ForStatement' ||
+      node.type === 'WhileStatement' ||
+      node.type === 'DoWhileStatement' ||
+      node.type === 'ForOfStatement' ||
+      node.type === 'ForInStatement'
+    ) {
+      return false
+    }
+    for (const k in node) {
+      if (k === 'loc' || k === 'start' || k === 'end' || k === 'range' || k === 'type') continue
+      if (hasLoopExit(node[k])) return true
+    }
+    return false
+  }
+
+  const isTruthyLiteral = (t: any): boolean =>
+    (t?.type === 'Literal' && !!t.value) ||
+    (t?.type === 'Identifier' && t.name === 'true')
+
+  const walk = (node: any): void => {
+    if (!node || typeof node !== 'object') return
+    if (Array.isArray(node)) {
+      node.forEach(walk)
+      return
+    }
+    if (typeof node.type !== 'string') return
+
+    // while (true) / for (;;) with no reachable break or return.
+    if (
+      (node.type === 'WhileStatement' && isTruthyLiteral(node.test)) ||
+      (node.type === 'ForStatement' && !node.test)
+    ) {
+      if (!hasLoopExit(node.body)) {
+        add('Infinite loop: this loop has no exit condition and no break/return. Add a stopping condition or a break.')
+      }
+    }
+    // Assignment used where a comparison was likely intended: if (x = y).
+    if (node.type === 'IfStatement' && node.test?.type === 'AssignmentExpression' && node.test.operator === '=') {
+      add('Possible mistake: "=" is assignment inside a condition. Did you mean "===" for comparison?')
+    }
+
+    for (const k in node) {
+      if (k === 'loc' || k === 'start' || k === 'end' || k === 'range' || k === 'type') continue
+      walk(node[k])
+    }
+  }
+  walk(ast)
+  return warnings
+}
 
 // ---------------------------------------------------------------------------
 // Formatting helpers (also exported for use by the UI).

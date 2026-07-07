@@ -34,6 +34,7 @@ import {
 import { MemoryPanel } from '@/components/visualizer/call-stack'
 import { HeapGraph } from '@/components/visualizer/heap-graph'
 import { Timeline, StepLegend } from '@/components/visualizer/timeline'
+import { HeatTrail } from '@/components/visualizer/heat-trail'
 import { PlaybackControls } from '@/components/visualizer/playback-controls'
 import { CodeEditor, type EditorHighlight } from '@/components/visualizer/code-editor'
 import { QuizOverlay } from '@/components/visualizer/quiz-overlay'
@@ -47,6 +48,7 @@ import { ClosureCapture } from '@/components/visualizer/closure-capture'
 import { HoistingPanel } from '@/components/visualizer/hoisting-panel'
 import { FlowChart } from '@/components/visualizer/flow-chart'
 import { CallStackPanel } from '@/components/visualizer/call-stack-panel'
+import { FlameGraph } from '@/components/visualizer/flame-graph'
 import { FloatingWindow } from '@/components/visualizer/floating-window'
 import { ComplexityMeter } from '@/components/visualizer/complexity-meter'
 import {
@@ -59,6 +61,7 @@ import {
   Layers as LayersIcon,
   Workflow as WorkflowIcon,
   ArrowUpNarrowWide as HoistIcon,
+  Flame as FlameIcon,
   X as XIcon,
   Plus as PlusIcon,
   PictureInPicture2 as PopOutIcon,
@@ -84,7 +87,7 @@ import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
 
 type PanelView =
   | 'memory' | 'heap' | 'callstack' | 'loops' | 'calls'
-  | 'eventloop' | 'closures' | 'hoisting' | 'flow'
+  | 'eventloop' | 'closures' | 'hoisting' | 'flow' | 'flame'
 
 // Feature tabs (everything except the permanent Memory tab). Each maps to a
 // settings flag; enabling the flag pins the tab, closing its "x" turns it off.
@@ -94,6 +97,7 @@ const TAB_FEATURES: { view: PanelView; key: FeatureKey; label: string; icon: typ
   { view: 'loops',     key: 'loopUnroll',     label: 'Loops',      icon: RepeatIcon },
   { view: 'flow',      key: 'flowChart',      label: 'Flow chart', icon: WorkflowIcon },
   { view: 'calls',     key: 'recursionTree',  label: 'Call tree',  icon: GitBranchIcon },
+  { view: 'flame',     key: 'flameGraph',     label: 'Flame graph',icon: FlameIcon },
   { view: 'eventloop', key: 'eventLoop',      label: 'Event loop', icon: TimerIcon },
   { view: 'closures',  key: 'closureCapture', label: 'Closures',   icon: LassoIcon },
   { view: 'hoisting',  key: 'hoisting',       label: 'Hoisting',   icon: HoistIcon },
@@ -645,11 +649,15 @@ export default function Home() {
               changed={changedVars}
               indexPointers={indexPointers}
               barMode={barMode}
+              aliasWires={settings.aliasWires}
             />
           </div>
         )}
         {effectiveView === 'heap' && <HeapGraph step={currentStep} />}
         {effectiveView === 'callstack' && <CallStackPanel step={currentStep} />}
+        {effectiveView === 'flame' && (
+          <FlameGraph steps={trace?.steps ?? []} currentIndex={currentIndex} onSeek={seek} />
+        )}
         {effectiveView === 'loops' && <LoopUnroll loop={currentLoop} currentIndex={currentIndex} onJump={seek} />}
         {effectiveView === 'calls' && (
           <RecursionTree
@@ -725,6 +733,13 @@ export default function Home() {
           onSeek={(idx) => { setIsPlaying(false); setCurrentIndex(idx) }}
           breakpointLines={breakpointLines}
         />
+        {settings.heatTrail && (
+          <HeatTrail
+            steps={trace.steps}
+            currentIndex={currentIndex}
+            onSeek={(idx) => { setIsPlaying(false); setCurrentIndex(idx) }}
+          />
+        )}
         <div className="mt-1.5 pt-1.5 border-t">
           <StepLegend />
         </div>
@@ -776,7 +791,7 @@ export default function Home() {
               <FilePlus2 className="h-4 w-4 mr-1" />
               New
             </Button>
-            <Button variant="default" size="sm" onClick={handleRunClick}>
+            <Button variant="default" className='bg-linear-to-r from-pink-500 to-red-500' size="sm" onClick={handleRunClick}>
               <Play className="h-4 w-4 mr-1" />
               Run
             </Button>
@@ -830,6 +845,32 @@ export default function Home() {
                   <div className="min-w-0">
                     <div className="font-semibold">Could not run this code</div>
                     <div className="font-mono text-xs mt-1 wrap-break-word">{error}</div>
+                  </div>
+                </div>
+              )}
+
+              {!error && trace?.truncated && (
+                <div className="flex items-start gap-2 p-2.5 rounded-lg border-2 border-amber-300 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 text-sm shrink-0">
+                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="font-semibold">Stopped early — possible infinite loop</div>
+                    <div className="text-xs mt-1 wrap-break-word">
+                      {trace.stopReason} Showing the first {trace.steps.length - 1} steps so you can see what happened.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!error && !trace?.truncated && trace?.warnings && trace.warnings.length > 0 && (
+                <div className="flex items-start gap-2 p-2.5 rounded-lg border border-amber-300/70 bg-amber-50/60 dark:bg-amber-950/25 text-amber-800 dark:text-amber-300 text-xs shrink-0">
+                  <Lightbulb className="h-4 w-4 mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="font-semibold">Heads up</div>
+                    <ul className="mt-1 list-disc pl-4 space-y-0.5">
+                      {trace.warnings.map((w, i) => (
+                        <li key={i} className="wrap-break-word">{w}</li>
+                      ))}
+                    </ul>
                   </div>
                 </div>
               )}

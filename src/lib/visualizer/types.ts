@@ -149,6 +149,14 @@ export interface Trace {
   hoisting?: HoistingInfo
   // True when the trace scheduled at least one async callback.
   hasAsync?: boolean
+  // True when execution hit the step limit and was stopped early (likely an
+  // infinite loop / runaway recursion). The steps present are the partial run.
+  truncated?: boolean
+  // A human-readable, diagnosed explanation + suggestion for the truncation.
+  stopReason?: string
+  // Non-fatal static hints surfaced before/after running (e.g. "while(true)
+  // with no break"). Shown as gentle suggestions, they do not block the run.
+  warnings?: string[]
 }
 
 export interface ParseErrorInfo {

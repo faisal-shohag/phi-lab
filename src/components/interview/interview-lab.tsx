@@ -18,7 +18,7 @@ export function InterviewLab({ userName }: { userName?: string }) {
   const iv = useInterview()
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+    <div className="min-h-screen bg-linear-to-br from-zinc-50 via-white to-zinc-100 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-950">
       <header className="sticky top-0 z-10 border-b bg-background/70 backdrop-blur-sm">
         <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-2.5">
           <Logo className="h-8 w-8" />
@@ -39,7 +39,20 @@ export function InterviewLab({ userName }: { userName?: string }) {
         </div>
       </header>
 
-      <main className="relative">
+      <main className="relative overflow-hidden">
+        <div
+          className="pointer-events-none absolute -top-24 -left-24 h-96 w-96 rounded-full bg-amber-400/20 blur-3xl dark:bg-amber-500/10"
+          aria-hidden
+        />
+        <div
+          className="pointer-events-none absolute top-1/3 -right-32 h-96 w-96 rounded-full bg-violet-500/20 blur-3xl dark:bg-violet-500/10"
+          aria-hidden
+        />
+        <div
+          className="pointer-events-none absolute bottom-0 left-1/4 h-72 w-72 rounded-full bg-fuchsia-400/10 blur-3xl dark:bg-fuchsia-500/10"
+          aria-hidden
+        />
+
         <AnimatePresence mode="wait">
           {iv.phase === 'idle' && (
             <motion.div key="setup" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>

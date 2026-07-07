@@ -22,6 +22,10 @@ interface VariableCardProps {
   indexPointers?: Map<number, string[]>
   // Show numeric arrays as bars instead of cells.
   barMode?: boolean
+  // When this variable shares a heap object with another variable (aliasing),
+  // a stable color for the group and the shared heap id — drives the alias badge.
+  aliasColor?: string
+  aliasId?: number
 }
 
 export function VariableCard({
@@ -35,6 +39,8 @@ export function VariableCard({
   recentlyChanged,
   indexPointers,
   barMode,
+  aliasColor,
+  aliasId,
 }: VariableCardProps) {
   const resolved = resolveValue(value, heap)
 
@@ -53,10 +59,27 @@ export function VariableCard({
         recentlyChanged && 'ring-2 ring-amber-400/70 dark:ring-amber-500/70 ring-offset-1 ring-offset-background',
         isClosure && !focused && 'border-dashed opacity-90',
       )}
+      style={aliasColor && !focused ? { borderColor: aliasColor } : undefined}
     >
       <div className="flex items-center gap-1.5 mb-1">
+        {aliasColor && (
+          <span
+            className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-background"
+            style={{ backgroundColor: aliasColor }}
+            title={`Aliases heap object #${aliasId} — shared with another variable`}
+          />
+        )}
         <span className="text-xs font-mono font-bold text-foreground">{name}</span>
         <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{resolved.kind}</span>
+        {aliasColor && (
+          <span
+            className="rounded px-1 font-mono text-[9px] font-bold text-white"
+            style={{ backgroundColor: aliasColor }}
+            title={`Same object as another variable (heap #${aliasId})`}
+          >
+            ≡ #{aliasId}
+          </span>
+        )}
         {isClosure && (
           <span className="ml-auto text-[9px] uppercase tracking-wide text-violet-500 dark:text-violet-400 font-semibold">
             closure
