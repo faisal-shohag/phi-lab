@@ -61,3 +61,9 @@ export function englishXp(score: number): number {
   const s = Math.max(0, Math.min(100, Math.floor(score)))
   return 40 + Math.round(s * 0.6)
 }
+
+// Support session: a flat grant for showing up and talking something through.
+// There is no score, so it's not performance-scaled.
+export function supportXp(): number {
+  return 20
+}

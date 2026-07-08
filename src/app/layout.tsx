@@ -44,7 +44,7 @@ export default function RootLayout({
       lang="en"
       className={cn("h-full", "antialiased", "font-sans", inter.variable, jetbrainsMono.variable, notoSansBengali.variable)}  suppressHydrationWarning
     >
-      <body className="bg-background text-foreground">
+      <body className="bg-background text-foreground font">
           <ThemeProvider
             attribute="class"
             defaultTheme="system"

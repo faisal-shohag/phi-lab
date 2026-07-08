@@ -39,7 +39,7 @@ export function LandingHeader() {
 
         <div className="ml-auto flex items-center gap-2">
           <AnimatedThemeToggler />
-          <Button asChild size="sm" className="hidden sm:inline-flex">
+          <Button asChild size="sm" className="hidden sm:inline-flex bg-linear-to-r from-red-500 to-pink-500">
             <a href="#labs">Open a lab</a>
           </Button>
           <XpBadge />

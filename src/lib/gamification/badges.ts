@@ -16,6 +16,7 @@ export interface BadgeStats {
   englishCompleted: number
   bestEnglish: number
   analogiesCreated: number
+  supportCompleted: number
 }
 
 export interface BadgeDef {
@@ -149,6 +150,14 @@ export const BADGES: BadgeDef[] = [
     icon: 'Palette',
     tint: 'from-orange-400 to-rose-500',
     earned: (s) => s.analogiesCreated >= 5,
+  },
+  {
+    id: 'reached-out',
+    label: 'Reached Out',
+    description: 'Finish your first live support session.',
+    icon: 'LifeBuoy',
+    tint: 'from-rose-400 to-pink-600',
+    earned: (s) => s.supportCompleted >= 1,
   },
 ]
 

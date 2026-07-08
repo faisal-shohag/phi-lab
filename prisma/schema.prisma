@@ -27,6 +27,7 @@ model User {
   feynman       FeynmanSession[]
   english       EnglishSession[]
   analogies     AnalogyCard[]
+  support       SupportSession[]
   xpEvents      XpEvent[]
   badges        UserBadge[]
 
@@ -161,6 +162,37 @@ model AnalogyCard {
 
   @@index([userId, createdAt])
   @@map("analogy_card")
+}
+
+// Support Session lab: a live voice call with an AI supporter about anything —
+// a coding problem, mental support, or learning guidance. Capped at 3 ACTIVE
+// sessions platform-wide; everyone else waits in a FIFO queue. No AI report is
+// generated — the learner rates the session (1-5) afterwards instead.
+//   status: waiting  -> in the queue, not yet connected
+//           active   -> holding one of the 3 live slots (heartbeat via lastSeenAt)
+//           completed-> finished (10-min cap or ended early)
+//           abandoned-> left the queue / tab died before connecting
+model SupportSession {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category   String    // 'coding' | 'mental' | 'guidance' | 'other'
+  problem    String    // written before joining; seeds the AI's context
+  language   String    @default("en") // 'en' | 'bn'
+  voice      String    @default("Kore")
+  status     String    @default("waiting")
+  transcript Json?
+  rating     Int?      // 1-5, set after the session
+  feedback   String?   // optional free-text comment
+  lastSeenAt DateTime  @default(now()) // heartbeat; a stale active row frees its slot
+  startedAt  DateTime? // set when promoted to active
+  endedAt    DateTime?
+  createdAt  DateTime  @default(now()) // FIFO queue order
+  updatedAt  DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
+  @@map("support_session")
 }
 
 model Session {

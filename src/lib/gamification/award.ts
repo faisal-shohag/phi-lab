@@ -97,6 +97,7 @@ export async function getStats(userId: string): Promise<BadgeStats> {
   let englishCompleted = 0
   let bestEnglish = 0
   let analogiesCreated = 0
+  let supportCompleted = 0
 
   for (const e of events) {
     const meta = (e.meta ?? {}) as Record<string, unknown>
@@ -120,6 +121,8 @@ export async function getStats(userId: string): Promise<BadgeStats> {
       if (score > bestEnglish) bestEnglish = score
     } else if (e.reason === 'analogy_created') {
       analogiesCreated++
+    } else if (e.reason === 'support_completed') {
+      supportCompleted++
     }
   }
 
@@ -136,6 +139,7 @@ export async function getStats(userId: string): Promise<BadgeStats> {
     englishCompleted,
     bestEnglish,
     analogiesCreated,
+    supportCompleted,
   }
 }
 

@@ -5,7 +5,7 @@
 import { useEffect } from 'react'
 import {
   Sparkles, Rocket, GraduationCap, Mic, Trophy, Flame, Target, Zap, Crown, Snowflake,
-  Presentation, Lightbulb, Languages, MessageCircle, Palette, Lock,
+  Presentation, Lightbulb, Languages, MessageCircle, Palette, LifeBuoy, Lock,
   type LucideIcon,
 } from 'lucide-react'
 import { BADGES, type BadgeStats } from '@/lib/gamification/badges'
@@ -13,7 +13,7 @@ import { useXp, refreshXp } from '@/lib/gamification/use-xp'
 import { cn } from '@/lib/utils'
 
 const ICONS: Record<string, LucideIcon> = {
-  Sparkles, Rocket, GraduationCap, Mic, Trophy, Flame, Target, Zap, Crown, Snowflake, Presentation, Lightbulb, Languages, MessageCircle, Palette,
+  Sparkles, Rocket, GraduationCap, Mic, Trophy, Flame, Target, Zap, Crown, Snowflake, Presentation, Lightbulb, Languages, MessageCircle, Palette, LifeBuoy,
 }
 
 interface AchievementsProps {
