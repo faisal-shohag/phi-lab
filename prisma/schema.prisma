@@ -19,6 +19,19 @@ model User {
   emailVerified Boolean   @default(false)
   image         String?
   xp            Int       @default(0)
+  // Optional career/profile info — surfaced on /profile and the public /u/[id]
+  // page. Everything here is opt-in; empty values simply lower the profile
+  // completion score. `profilePublic` gates whether /u/[id] is viewable.
+  headline      String?
+  bio           String?
+  goal          String?
+  skills        String[]  @default([])
+  location      String?
+  resumeUrl     String?
+  githubUrl     String?
+  linkedinUrl   String?
+  websiteUrl    String?
+  profilePublic Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   sessions      Session[]

@@ -55,6 +55,18 @@ export function Achievements({ initialXp, initialBadgeIds, stats }: Achievements
         </div>
       </div>
 
+       {/* Stat strip */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat label="Interviews done" value={stats.interviewsCompleted} />
+        <Stat label="Best interview" value={stats.bestInterviewScore} />
+        <Stat label="Quizzes correct" value={stats.quizCorrect} />
+        <Stat label="Best streak" value={stats.bestQuizStreak} />
+        <Stat label="Teach-backs" value={stats.feynmanCompleted} />
+        <Stat label="Best clarity" value={stats.bestClarity} />
+        <Stat label="English sessions" value={stats.englishCompleted} />
+        <Stat label="Analogies made" value={stats.analogiesCreated} />
+      </div>
+
       {/* Badge grid */}
       <div>
         <div className="mb-3 flex items-baseline justify-between">
@@ -91,13 +103,7 @@ export function Achievements({ initialXp, initialBadgeIds, stats }: Achievements
         </div>
       </div>
 
-      {/* Stat strip */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Interviews done" value={stats.interviewsCompleted} />
-        <Stat label="Best interview" value={stats.bestInterviewScore} />
-        <Stat label="Quizzes correct" value={stats.quizCorrect} />
-        <Stat label="Best streak" value={stats.bestQuizStreak} />
-      </div>
+     
     </div>
   )
 }

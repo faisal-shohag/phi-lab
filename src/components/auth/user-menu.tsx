@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { History, LogOut, Loader2, Trophy } from 'lucide-react'
+import { History, LogOut, Loader2, UserRound } from 'lucide-react'
 import { authClient } from '@/lib/auth-client'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -54,7 +54,7 @@ export function UserMenu({ showHistory = true }: UserMenuProps) {
     <DropdownMenu>
       <DropdownMenuTrigger className="flex items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
         <Avatar>
-          {user.image && <AvatarImage src={user.image} alt={user.name ?? 'User'} />}
+          {user.image && <AvatarImage referrerPolicy='no-referrer' src={user.image} alt={user.name ?? 'User'} />}
           <AvatarFallback className="bg-linear-to-br from-amber-500 via-fuchsia-500 to-violet-600 text-xs font-semibold text-white">
             {initials(user.name, user.email)}
           </AvatarFallback>
@@ -76,8 +76,8 @@ export function UserMenu({ showHistory = true }: UserMenuProps) {
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <Link href="/profile">
-            <Trophy className="h-4 w-4" />
-            Achievements
+            <UserRound className="h-4 w-4" />
+            Profile
           </Link>
         </DropdownMenuItem>
         {showHistory && (
