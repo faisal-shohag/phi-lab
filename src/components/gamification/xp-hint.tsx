@@ -69,7 +69,7 @@ export function XpHint({ redirect = '/labs/js-motion' }: XpHintProps) {
           prints. Sign in to earn XP for correct answers, unlock badges, and level up as you learn.
         </PopoverDescription>
         <div className="mt-3 flex gap-2">
-          <Button asChild size="sm" className="flex-1">
+          <Button asChild size="sm" className="flex-1 bg-linear-to-r from-red-500 via-orange-500 to-pink-500">
             <Link href={`/sign-in?redirect=${encodeURIComponent(redirect)}`}>Sign in to earn XP</Link>
           </Button>
           <Button size="sm" variant="ghost" onClick={dismiss}>

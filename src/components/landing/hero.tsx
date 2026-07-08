@@ -30,7 +30,7 @@ export function Hero() {
     <section className="relative overflow-hidden">
       {/* Faint dot-grid ambience */}
       <div
-        className="pointer-events-none absolute inset-0 opacity-[0.35] [mask-image:radial-gradient(circle_at_center,black,transparent_70%)]"
+        className="pointer-events-none absolute inset-0 opacity-[0.35] mask-[radial-gradient(circle_at_center,black,transparent_70%)]"
         style={{
           backgroundImage: 'radial-gradient(currentColor 1px, transparent 1px)',
           backgroundSize: '28px 28px',

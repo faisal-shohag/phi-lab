@@ -13,7 +13,7 @@ interface PhiOrbProps {
 
 const CHIPS = [
   { label: 'heap', angle: -100, radius: 1.05 },
-  { label: 'call stack', angle: 30, radius: 1.15 },
+  { label: 'call-stack', angle: 30, radius: 1.15 },
   { label: '▶ run', angle: 150, radius: 1.05 },
 ]
 
@@ -77,7 +77,7 @@ export function PhiOrb({ size = 180, className, withChips = true }: PhiOrbProps)
           return (
             <motion.span
               key={chip.label}
-              className="absolute rounded-full border border-border bg-card/90 px-2 py-1 font-mono text-[10px] text-muted-foreground shadow-sm backdrop-blur-sm"
+              className="absolute rounded-full border border-border bg-card/90 px-2 py-1 font-mono text-[10px] text-muted-foreground shadow-sm backdrop-blur-sm min-w-20 text-center "
               style={{ left: `calc(50% + ${x}px)`, top: `calc(50% + ${y}px)`, translate: '-50% -50%' }}
               animate={animated ? { y: [0, -8, 0] } : undefined}
               transition={{ duration: 4 + i, repeat: Infinity, ease: 'easeInOut', delay: i * 0.6 }}

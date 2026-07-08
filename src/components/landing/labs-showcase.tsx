@@ -251,7 +251,7 @@ export function LabsShowcase() {
         </p>
       </Reveal>
 
-      <Reveal stagger className="mt-10 grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <Reveal stagger className="mt-10 grid grid-cols-1 gap-5 lg:grid-cols-3">
         <LabCard
           accent="amber"
           icon={<Cpu className="h-5 w-5" />}
@@ -261,6 +261,8 @@ export function LabsShowcase() {
           href="/labs/js-motion"
           mockup={<JsMotionMockup />}
         />
+
+        
         <LabCard
           accent="violet"
           icon={<Mic className="h-5 w-5" />}
@@ -270,6 +272,18 @@ export function LabsShowcase() {
           href="/labs/interview"
           mockup={<InterviewMockup />}
         />
+
+          <LabCard
+          accent="rose"
+          icon={<LifeBuoy className="h-5 w-5" />}
+          title="Support Session"
+          description="A live voice call with a supportive AI — about a bug, something on your mind, or where to go next. Share your screen so it can see the error, and rate the help afterwards."
+          chips={SUPPORT_CHIPS}
+          href="/labs/support"
+          mockup={<SupportMockup />}
+        />
+
+
         <LabCard
           accent="indigo"
           icon={<GraduationCap className="h-5 w-5" />}
@@ -288,15 +302,7 @@ export function LabsShowcase() {
           href="/labs/english"
           mockup={<EnglishMockup />}
         />
-        <LabCard
-          accent="rose"
-          icon={<LifeBuoy className="h-5 w-5" />}
-          title="Support Session"
-          description="A live voice call with a supportive AI — about a bug, something on your mind, or where to go next. Share your screen so it can see the error, and rate the help afterwards."
-          chips={SUPPORT_CHIPS}
-          href="/labs/support"
-          mockup={<SupportMockup />}
-        />
+      
       </Reveal>
     </section>
   )
