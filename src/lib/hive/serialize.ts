@@ -22,6 +22,13 @@ export type {
   HivePostDetailDTO,
 } from './types'
 
+// unstable_cache round-trips cached data through JSON, so a cache hit hands
+// back Date fields as ISO strings while a cache miss hands back real Dates
+// straight from Prisma — this normalizes either into an ISO string.
+function toISO(d: Date | string): string {
+  return typeof d === 'string' ? d : d.toISOString()
+}
+
 const AI_AUTHOR: HiveAuthorDTO = {
   id: null,
   name: 'Hive AI',
@@ -81,7 +88,7 @@ export function serializeReply(
     nectar: reply._count?.reactions ?? 0,
     reactedByMe: opts.myReactionKeys.has(`reply:${reply.id}`),
     isAccepted: opts.acceptedReplyId === reply.id,
-    createdAt: reply.createdAt.toISOString(),
+    createdAt: toISO(reply.createdAt),
   }
 }
 
@@ -109,8 +116,8 @@ export function serializePostCard(
     nectar: post._count?.reactions ?? 0,
     aiAttemptCount: post.aiAttemptCount,
     aiProvider: viewer.staff ? post.aiProvider : null,
-    createdAt: post.createdAt.toISOString(),
-    expiresAt: post.expiresAt.toISOString(),
+    createdAt: toISO(post.createdAt),
+    expiresAt: toISO(post.expiresAt),
   }
 }
 
@@ -119,6 +126,6 @@ export function serializeEvent(e: HivePostEvent, viewer: ViewerScope = { staff: 
     id: e.id,
     type: e.type,
     meta: scrubMeta(e.meta, viewer.staff),
-    createdAt: e.createdAt.toISOString(),
+    createdAt: toISO(e.createdAt),
   }
 }

@@ -9,6 +9,7 @@
 import { requireHiveUser } from '@/lib/hive/roles'
 import { hiveError } from '@/lib/hive/errors'
 import { prisma } from '@/lib/prisma'
+import { invalidatePost } from '@/lib/hive/detail'
 
 export async function POST(request: Request) {
   const { user, error } = await requireHiveUser()
@@ -29,11 +30,13 @@ export async function POST(request: Request) {
 
   const existing = await prisma.hiveReaction.findUnique({
     where: { userId_targetKey: { userId: user.id, targetKey } },
-    select: { id: true },
+    select: { id: true, postId: true, replyId: true },
   })
 
   if (existing) {
     await prisma.hiveReaction.delete({ where: { id: existing.id } })
+    const postId = existing.postId ?? (await postIdOfReply(existing.replyId))
+    if (postId) invalidatePost(postId)
     return Response.json({ reacted: false })
   }
 
@@ -42,11 +45,19 @@ export async function POST(request: Request) {
     const post = await prisma.hivePost.findUnique({ where: { id: targetId }, select: { id: true } })
     if (!post) return hiveError('NOT_FOUND')
     await prisma.hiveReaction.create({ data: { userId: user.id, postId: targetId, targetKey } })
+    invalidatePost(targetId)
   } else {
-    const reply = await prisma.hiveReply.findUnique({ where: { id: targetId }, select: { id: true } })
+    const reply = await prisma.hiveReply.findUnique({ where: { id: targetId }, select: { id: true, postId: true } })
     if (!reply) return hiveError('NOT_FOUND')
     await prisma.hiveReaction.create({ data: { userId: user.id, replyId: targetId, targetKey } })
+    invalidatePost(reply.postId)
   }
 
   return Response.json({ reacted: true })
+}
+
+async function postIdOfReply(replyId: string | null): Promise<string | null> {
+  if (!replyId) return null
+  const reply = await prisma.hiveReply.findUnique({ where: { id: replyId }, select: { postId: true } })
+  return reply?.postId ?? null
 }

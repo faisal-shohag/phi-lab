@@ -8,11 +8,13 @@
 //        `after()` so the student sees their post immediately. `maxDuration`
 //        reserves headroom for that background work.
 import { after } from 'next/server'
+import { unstable_cache as nextCache } from 'next/cache'
 import { requireHiveUser, isMentor } from '@/lib/hive/roles'
 import { hiveError } from '@/lib/hive/errors'
 import { prisma } from '@/lib/prisma'
 import { maybeSweepExpired } from '@/lib/hive/cleanup'
 import { serializePostCard } from '@/lib/hive/serialize'
+import { FEED_TAG, invalidateFeed } from '@/lib/hive/cache'
 import { triagePost } from '@/lib/hive/ai'
 import { runAiAttempt, escalatePost } from '@/lib/hive/attempts'
 import { awardXp } from '@/lib/gamification/award'
@@ -67,16 +69,28 @@ export async function GET(request: Request) {
     ]
   }
 
-  const posts = await prisma.hivePost.findMany({
-    where,
-    orderBy: [{ pinned: 'desc' }, { createdAt: 'desc' }],
-    take: PAGE_SIZE + 1,
-    ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-    include: {
-      author: { select: { id: true, name: true, image: true, role: true } },
-      _count: { select: { replies: true, reactions: true } },
-    },
-  })
+  // The result is viewer-independent (staff gating happens below, per
+  // request, in serializePostCard) so it's safe to share across viewers.
+  // Free-text search is skipped: too variable to be worth caching, and
+  // search UX expects fresh results.
+  const fetchPosts = () =>
+    prisma.hivePost.findMany({
+      where,
+      orderBy: [{ pinned: 'desc' }, { createdAt: 'desc' }],
+      take: PAGE_SIZE + 1,
+      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+      include: {
+        author: { select: { id: true, name: true, image: true, role: true } },
+        _count: { select: { replies: true, reactions: true } },
+      },
+    })
+
+  const posts = q
+    ? await fetchPosts()
+    : await nextCache(fetchPosts, ['hive-feed', tag ?? '', type ?? '', status ?? '', cursor ?? ''], {
+        tags: [FEED_TAG],
+        revalidate: 300,
+      })()
 
   const hasMore = posts.length > PAGE_SIZE
   const page = hasMore ? posts.slice(0, PAGE_SIZE) : posts
@@ -176,6 +190,8 @@ export async function POST(request: Request) {
   } catch {
     // XP is best-effort
   }
+
+  invalidateFeed()
 
   if (sensitive) {
     // Mental-health, harassment, integrity, billing: a human handles it. The AI

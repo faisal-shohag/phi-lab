@@ -13,6 +13,7 @@ import { prisma } from '@/lib/prisma'
 import { answerAttempt, type ThreadMessage } from './ai'
 import { PROVIDER_ENUM } from './providers'
 import { notifyFollowers, notifyMentors, notifyUser } from './notify'
+import { invalidatePost } from './detail'
 import { MAX_AI_ATTEMPTS } from './constants'
 
 /** Below this, attempt 1 hands over rather than risk a confidently wrong fix. */
@@ -44,6 +45,7 @@ export async function escalatePost(postId: string, reason: string): Promise<void
   await prisma.hivePostEvent.create({
     data: { postId, type: 'escalated', meta: { reason, aiReplies } },
   })
+  invalidatePost(postId)
 
   await notifyMentors(postId, {
     type: 'escalated',
@@ -93,6 +95,7 @@ export async function runAiAttempt(postId: string, n: number): Promise<void> {
     data: { aiAttemptCount: n, status: 'AI_WORKING' },
   })
   if (claimed.count === 0) return
+  invalidatePost(postId) // status just flipped to AI_WORKING — let the poll see it now
 
   const post = await prisma.hivePost.findUnique({
     where: { id: postId },
@@ -169,6 +172,10 @@ export async function runAiAttempt(postId: string, n: number): Promise<void> {
       data: { status: 'OPEN' },
     })
     await escalatePost(postId, 'the AI could not generate an answer')
+  } finally {
+    // Covers the reply-created, low-confidence-escalated, and error paths in
+    // one place — this is what the 4s AI_WORKING poll in post-thread.tsx reads.
+    invalidatePost(postId)
   }
 }
 

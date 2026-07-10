@@ -9,6 +9,7 @@ import { verifyPeerAnswer } from './ai'
 import { awardXp } from '@/lib/gamification/award'
 import { hiveApprovedXp } from '@/lib/gamification/reasons'
 import { notifyUser } from './notify'
+import { invalidatePost } from './detail'
 
 export async function runPeerVerification(replyId: string): Promise<void> {
   const reply = await prisma.hiveReply.findUnique({
@@ -32,6 +33,7 @@ export async function runPeerVerification(replyId: string): Promise<void> {
   } catch {
     // Verification is a bonus, not a gate: leave the answer unmarked.
     await prisma.hiveReply.update({ where: { id: replyId }, data: { verification: 'NONE' } })
+    invalidatePost(reply.post.id)
     return
   }
 
@@ -40,6 +42,7 @@ export async function runPeerVerification(replyId: string): Promise<void> {
     where: { id: replyId },
     data: { verification, verifyNote: note },
   })
+  invalidatePost(reply.post.id)
 
   if (verification !== 'APPROVED' || !reply.authorId) return
 

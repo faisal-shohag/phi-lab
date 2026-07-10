@@ -4,6 +4,7 @@ import { requireMentor } from '@/lib/hive/roles'
 import { hiveError } from '@/lib/hive/errors'
 import { prisma } from '@/lib/prisma'
 import { serializePostCard } from '@/lib/hive/serialize'
+import { invalidateFeed } from '@/lib/hive/cache'
 import { NEVER_EXPIRES, MAX_TITLE_LEN, MAX_BODY_LEN } from '@/lib/hive/constants'
 
 export const maxDuration = 60
@@ -56,6 +57,8 @@ export async function POST(request: Request) {
       })),
     })
   }
+
+  invalidateFeed()
 
   return Response.json({ post: serializePostCard(post, { staff: true }) }, { status: 201 })
 }

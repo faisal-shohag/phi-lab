@@ -12,6 +12,8 @@ import { awardXp } from '@/lib/gamification/award'
 import { hiveAcceptedXp, hiveResolvedAskerXp } from '@/lib/gamification/reasons'
 import { notifyUser } from '@/lib/hive/notify'
 import { archiveToHoneycomb } from '@/lib/hive/archive'
+import { invalidatePost } from '@/lib/hive/detail'
+import { invalidateFeed } from '@/lib/hive/cache'
 
 export const maxDuration = 60
 
@@ -101,6 +103,9 @@ export async function POST(
   // Distil the thread into a Honeycomb entry. This is what exempts the post
   // from the 3-day sweep — resolved knowledge is the only thing that survives.
   after(() => archiveToHoneycomb(post.id))
+
+  invalidatePost(post.id)
+  invalidateFeed()
 
   return Response.json({ ok: true })
 }

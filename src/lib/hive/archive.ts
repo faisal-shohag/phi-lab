@@ -5,6 +5,8 @@
 // than a raw transcript. Runs in `after()` — the student never waits on it.
 import { prisma } from '@/lib/prisma'
 import { summarizeForKb } from './ai'
+import { invalidatePost } from './detail'
+import { invalidateFeed, invalidateHoneycomb } from './cache'
 
 export async function archiveToHoneycomb(postId: string): Promise<void> {
   const post = await prisma.hivePost.findUnique({
@@ -35,4 +37,7 @@ export async function archiveToHoneycomb(postId: string): Promise<void> {
     data: { kbSummary, status: 'ARCHIVED', archivedAt: new Date() },
   })
   await prisma.hivePostEvent.create({ data: { postId, type: 'archived' } })
+  invalidatePost(postId)
+  invalidateFeed()
+  invalidateHoneycomb()
 }

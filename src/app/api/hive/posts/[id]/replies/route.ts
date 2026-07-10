@@ -10,6 +10,7 @@ import { hiveError } from '@/lib/hive/errors'
 import { prisma } from '@/lib/prisma'
 import { serializeReply } from '@/lib/hive/serialize'
 import { runNextAiAttemptOrEscalate } from '@/lib/hive/attempts'
+import { invalidatePost } from '@/lib/hive/detail'
 import { runPeerVerification } from '@/lib/hive/verify'
 import { notifyFollowers, notifyUser } from '@/lib/hive/notify'
 import { awardXp } from '@/lib/gamification/award'
@@ -137,6 +138,8 @@ export async function POST(
       body: post.title,
     }),
   )
+
+  invalidatePost(post.id)
 
   return Response.json(
     {

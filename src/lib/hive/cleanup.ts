@@ -16,6 +16,7 @@ import { awardXp } from '@/lib/gamification/award'
 import { hiveQueenXp } from '@/lib/gamification/reasons'
 import { notifyUser } from './notify'
 import { NEVER_EXPIRES } from './constants'
+import { invalidateFeed } from './cache'
 
 let lastSweep = 0
 const THROTTLE_MS = 15 * 60 * 1000 // at most once per 15 min per instance
@@ -29,6 +30,7 @@ export async function sweepExpired(): Promise<number> {
       expiresAt: { lt: new Date() },
     },
   })
+  if (res.count > 0) invalidateFeed()
   return res.count
 }
 
@@ -96,6 +98,7 @@ async function maybePostEncouragement(): Promise<boolean> {
       expiresAt: NEVER_EXPIRES,
     },
   })
+  invalidateFeed()
   return true
 }
 

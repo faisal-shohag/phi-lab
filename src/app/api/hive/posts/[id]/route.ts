@@ -5,10 +5,11 @@
 // housekeeping. The 3-day sweep handles the latter.
 import { requireHiveUser, requireMentor, isMentor } from '@/lib/hive/roles'
 import { hiveError } from '@/lib/hive/errors'
-import { loadPostDetail } from '@/lib/hive/detail'
+import { loadPostDetail, invalidatePost } from '@/lib/hive/detail'
 import { prisma } from '@/lib/prisma'
 import { notifyUser } from '@/lib/hive/notify'
 import { MAX_BODY_LEN } from '@/lib/hive/constants'
+import { invalidateFeed } from '@/lib/hive/cache'
 
 export async function GET(
   _request: Request,
@@ -52,6 +53,8 @@ export async function DELETE(
   // Cascades take the replies, events, reactions and follows with it.
   // Notifications survive by design (no FK), so the author still hears why.
   await prisma.hivePost.delete({ where: { id } })
+  invalidatePost(id)
+  invalidateFeed()
 
   if (post.authorId && post.authorId !== user.id) {
     await notifyUser({
