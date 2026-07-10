@@ -67,3 +67,38 @@ export function englishXp(score: number): number {
 export function supportXp(): number {
   return 20
 }
+
+// ── Hive helpdesk ─────────────────────────────────────────────────────────
+// Asking is cheap; helping is what we want to reward. Nectar reactions grant no
+// XP at all — otherwise they become a farmable currency. They only rank the
+// weekly leaderboard.
+
+/** Posting a question. Small, and the route caps posts per day anyway. */
+export function hivePostXp(): number {
+  return 5
+}
+
+/** Replying to someone. The route caps how many replies earn XP per day. */
+export function hiveReplyXp(): number {
+  return 5
+}
+
+/** A peer answer the AI verified as correct ("Bee-Approved"). */
+export function hiveApprovedXp(): number {
+  return 25
+}
+
+/** The asker accepted your answer — the strongest signal we have. */
+export function hiveAcceptedXp(): number {
+  return 40
+}
+
+/** The asker gets a little back for closing the loop. */
+export function hiveResolvedAskerXp(): number {
+  return 10
+}
+
+/** Top of the weekly helper leaderboard. */
+export function hiveQueenXp(): number {
+  return 100
+}

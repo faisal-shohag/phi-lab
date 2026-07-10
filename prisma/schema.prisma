@@ -12,6 +12,12 @@ datasource db {
   provider = "postgresql"
 }
 
+enum Role {
+  STUDENT
+  MENTOR
+  ADMIN
+}
+
 model User {
   id            String    @id
   name          String
@@ -19,6 +25,9 @@ model User {
   emailVerified Boolean   @default(false)
   image         String?
   xp            Int       @default(0)
+  // Helpdesk role. Mentors/admins are seeded lazily from HIVE_MENTOR_EMAILS
+  // (see src/lib/hive/roles.ts). STUDENT for everyone else.
+  role          Role      @default(STUDENT)
   // Optional career/profile info — surfaced on /profile and the public /u/[id]
   // page. Everything here is opt-in; empty values simply lower the profile
   // completion score. `profilePublic` gates whether /u/[id] is viewable.
@@ -43,6 +52,12 @@ model User {
   support       SupportSession[]
   xpEvents      XpEvent[]
   badges        UserBadge[]
+  hivePosts         HivePost[]         @relation("PostAuthor")
+  assignedHivePosts HivePost[]         @relation("PostMentor")
+  hiveReplies       HiveReply[]
+  hiveReactions     HiveReaction[]
+  hiveFollows       HiveFollow[]
+  hiveNotifications HiveNotification[]
 
   @@unique([email])
   @@map("user")
@@ -254,4 +269,262 @@ model Verification {
 
   @@index([identifier])
   @@map("verification")
+}
+
+// ── Hive: AI-powered helpdesk ──────────────────────────────────────────────
+// A social feed of student problems. The AI answers first (up to 3 attempts);
+// unresolved posts escalate to a human mentor. Questions auto-delete after 3
+// days unless resolved+accepted, in which case they archive into the Honeycomb
+// knowledge base. Announcements and AI encouragement share the same feed via
+// `type`. See client/.claude/plans for the full design.
+
+enum HivePostType {
+  QUESTION
+  ANNOUNCEMENT
+  ENCOURAGEMENT
+}
+
+enum HivePostStatus {
+  OPEN
+  AI_WORKING
+  ESCALATED
+  RESOLVED
+  ARCHIVED
+}
+
+model HivePost {
+  id               String         @id @default(cuid())
+  authorId         String? // null for AI-authored (encouragement) posts
+  author           User?          @relation("PostAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  type             HivePostType   @default(QUESTION)
+  title            String
+  body             String // markdown
+  images           String[]       @default([]) // cloudinary secure_urls
+  tags             String[]       @default([]) // from triage
+  topic            String? // triage: e.g. "javascript", "css"
+  milestone        String? // triage: course milestone guess
+  severity         String? // 'low' | 'medium' | 'high'
+  sensitive        Boolean        @default(false)
+  status           HivePostStatus @default(OPEN)
+  aiAttemptCount   Int            @default(0) // 0..3
+  assignedMentorId String?
+  assignedMentor   User?          @relation("PostMentor", fields: [assignedMentorId], references: [id], onDelete: SetNull)
+  acceptedReplyId  String?        @unique // plain unique string, no FK (avoids circular relation)
+  pinned           Boolean        @default(false) // announcements
+  // Set on AI-authored posts (ENCOURAGEMENT). Staff-only, like HiveReply.aiProvider.
+  aiProvider       AiProvider?
+  kbSummary        String? // AI-distilled summary written at archive time
+  expiresAt        DateTime // createdAt + 3 days (questions); far future for announcements
+  resolvedAt       DateTime?
+  archivedAt       DateTime?
+  // Denormalized outcome, written at the terminal transitions. Derivable from
+  // events + replies, but the admin dashboard slices on these constantly and a
+  // three-table join per tile is not worth it.
+  resolvedBy       HiveResolver? // who wrote the accepted answer
+  escalatedAt      DateTime?
+  escalationReason String?
+  // AI answers posted before the hand-off. 0 = the AI never got to try
+  // (sensitive topic, "need a human", or every provider failed on attempt 1).
+  escalatedAfterAiReplies Int?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  // Full-text search is served by a GIN *expression* index over
+  // to_tsvector(title||body||kbSummary) — see prisma/sql/hive_fts.sql. It adds
+  // no column, so `prisma db push` stays drift-free; queries in
+  // src/lib/hive/search.ts repeat the same expression so the index is used.
+  replies          HiveReply[]
+  events           HivePostEvent[]
+  reactions        HiveReaction[]
+  follows          HiveFollow[]
+
+  @@index([status, pinned, createdAt])
+  @@index([expiresAt, status])
+  @@index([authorId, createdAt])
+  @@index([assignedMentorId, status])
+  @@map("hive_post")
+}
+
+/** Who actually solved it — the headline number for "did the AI carry its weight". */
+enum HiveResolver {
+  AI
+  PEER
+  MENTOR
+}
+
+enum HiveAuthorType {
+  STUDENT
+  MENTOR
+  AI
+}
+
+enum HiveReplyKind {
+  ANSWER
+  CLARIFYING_QUESTION
+  COMMENT
+}
+
+enum HiveVerification {
+  NONE
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model HiveReply {
+  id           String           @id @default(cuid())
+  postId       String
+  post         HivePost         @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorType   HiveAuthorType
+  authorId     String? // null when authorType == AI
+  author       User?            @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  kind         HiveReplyKind    @default(COMMENT)
+  body         String // markdown
+  images       String[]         @default([])
+  aiAttempt    Int? // 1|2|3 on AI answers — this IS the attempt log
+  // Which model wrote this. Never sent to students: they see "Hive AI", one
+  // consistent identity. Only mentors/admins see the provider behind it.
+  aiProvider   AiProvider?
+  stillStuck   Boolean          @default(false) // student pressed "still stuck" with this reply
+  verification HiveVerification @default(NONE) // Bee-Approved pipeline for peer ANSWERs
+  verifyNote   String? // AI's one-line verdict note
+  createdAt    DateTime         @default(now())
+  reactions    HiveReaction[]
+
+  @@index([postId, createdAt])
+  @@index([authorId, createdAt])
+  @@map("hive_reply")
+}
+
+// Append-only status timeline (audit spirit): created, triaged, ai_attempt_1..3,
+// escalated, mentor_assigned, resolved, archived.
+model HivePostEvent {
+  id        String   @id @default(cuid())
+  postId    String
+  post      HivePost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  type      String
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([postId, createdAt])
+  @@map("hive_post_event")
+}
+
+// Nectar reactions. targetKey = "post:<id>" | "reply:<id>" makes the unique
+// constraint work despite nullable FKs (PG treats NULLs as distinct in uniques).
+model HiveReaction {
+  id        String     @id @default(cuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  postId    String?
+  post      HivePost?  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  replyId   String?
+  reply     HiveReply? @relation(fields: [replyId], references: [id], onDelete: Cascade)
+  targetKey String
+  createdAt DateTime   @default(now())
+
+  @@unique([userId, targetKey])
+  @@index([replyId])
+  @@index([postId])
+  @@map("hive_reaction")
+}
+
+model HiveFollow {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  postId    String
+  post      HivePost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, postId])
+  @@map("hive_follow")
+}
+
+// ── AI telemetry ──────────────────────────────────────────────────────────
+// One row per call to an AI provider — successes and failures alike. Append-only,
+// like XpEvent. This is the source of truth for the admin dashboard: who was
+// used, how often, how fast, how many tokens, and why a call failed.
+//
+// postId is deliberately NOT a foreign key: questions are hard-deleted after 3
+// days, and usage history must outlive them. The same reason HiveNotification
+// keeps a bare postId.
+
+enum AiProvider {
+  GEMINI
+  OLLAMA
+  GROQ
+}
+
+/** Which job the model was doing. Cost and failure rates differ wildly per task. */
+enum AiTask {
+  TRIAGE
+  ANSWER
+  VERIFY
+  COACH
+  KB_SUMMARY
+  ENCOURAGEMENT
+}
+
+/** Coarse bucket for dashboards; `errorMessage` keeps the detail. */
+enum AiErrorKind {
+  RATE_LIMITED
+  AUTH
+  BAD_REQUEST
+  TIMEOUT
+  TRUNCATED
+  INVALID_JSON
+  SERVER_ERROR
+  NO_PROVIDER
+  UNKNOWN
+}
+
+model AiUsageEvent {
+  id        String     @id @default(cuid())
+  provider  AiProvider
+  model     String
+  task      AiTask
+  success   Boolean
+  /** 1..3 for ANSWER; null for one-shot tasks. */
+  aiAttempt Int?
+  /** Position in the failover chain for this call: 1 = first provider tried. */
+  tryIndex  Int        @default(1)
+
+  latencyMs      Int
+  promptTokens   Int?
+  responseTokens Int?
+  totalTokens    Int?
+  /** The model's self-reported confidence on ANSWER calls. */
+  confidence     Int?
+
+  errorKind    AiErrorKind?
+  errorMessage String?
+
+  postId String? // no FK — usage history outlives the post
+  userId String? // the student the work was for; null for cron-authored posts
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([provider, createdAt])
+  @@index([task, success, createdAt])
+  @@index([success, errorKind, createdAt])
+  @@map("ai_usage_event")
+}
+
+// type: 'reply' | 'bee_approved' | 'accepted' | 'escalated' | 'mentor_assigned'
+//     | 'announcement' | 'badge'. postId has NO FK so bell history survives the
+// 3-day post auto-deletion.
+model HiveNotification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  postId    String?
+  title     String
+  body      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt, createdAt])
+  @@map("hive_notification")
 }

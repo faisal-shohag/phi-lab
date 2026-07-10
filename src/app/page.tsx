@@ -1,6 +1,7 @@
 import { LandingHeader } from '@/components/landing/landing-header'
 import { Hero } from '@/components/landing/hero'
 import { LabsShowcase } from '@/components/landing/labs-showcase'
+import { HiveShowcase } from '@/components/landing/hive-showcase'
 import { Journey } from '@/components/landing/journey'
 import { Features } from '@/components/landing/features'
 import { Cta } from '@/components/landing/cta'
@@ -13,6 +14,7 @@ export default function Home() {
       <main>
         <Hero />
         <LabsShowcase />
+        <HiveShowcase />
         <Journey />
         <Features />
         <Cta />

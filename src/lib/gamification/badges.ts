@@ -17,6 +17,11 @@ export interface BadgeStats {
   bestEnglish: number
   analogiesCreated: number
   supportCompleted: number
+  /** Hive helpdesk: replies written, answers the AI verified, answers accepted. */
+  hiveReplies: number
+  hiveApproved: number
+  hiveAccepted: number
+  hiveQueenWeeks: number
 }
 
 export interface BadgeDef {
@@ -158,6 +163,38 @@ export const BADGES: BadgeDef[] = [
     icon: 'LifeBuoy',
     tint: 'from-rose-400 to-pink-600',
     earned: (s) => s.supportCompleted >= 1,
+  },
+  {
+    id: 'worker-bee',
+    label: 'Worker Bee',
+    description: 'Answer 5 questions in the Hive.',
+    icon: 'Hexagon',
+    tint: 'from-amber-400 to-yellow-600',
+    earned: (s) => s.hiveReplies >= 5,
+  },
+  {
+    id: 'pollinator',
+    label: 'Pollinator',
+    description: 'Get your first Bee-Approved answer.',
+    icon: 'BadgeCheck',
+    tint: 'from-yellow-400 to-amber-600',
+    earned: (s) => s.hiveApproved >= 1,
+  },
+  {
+    id: 'hive-hero',
+    label: 'Hive Hero',
+    description: 'Have 5 of your answers accepted.',
+    icon: 'Award',
+    tint: 'from-orange-400 to-amber-700',
+    earned: (s) => s.hiveAccepted >= 5,
+  },
+  {
+    id: 'queen-bee',
+    label: 'Queen Bee',
+    description: 'Top the weekly Hive leaderboard.',
+    icon: 'Crown',
+    tint: 'from-amber-300 to-orange-600',
+    earned: (s) => s.hiveQueenWeeks >= 1,
   },
 ]
 

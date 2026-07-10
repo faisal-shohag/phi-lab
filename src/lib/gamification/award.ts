@@ -98,6 +98,10 @@ export async function getStats(userId: string): Promise<BadgeStats> {
   let bestEnglish = 0
   let analogiesCreated = 0
   let supportCompleted = 0
+  let hiveReplies = 0
+  let hiveApproved = 0
+  let hiveAccepted = 0
+  let hiveQueenWeeks = 0
 
   for (const e of events) {
     const meta = (e.meta ?? {}) as Record<string, unknown>
@@ -123,6 +127,16 @@ export async function getStats(userId: string): Promise<BadgeStats> {
       analogiesCreated++
     } else if (e.reason === 'support_completed') {
       supportCompleted++
+    } else if (e.reason === 'hive_reply_posted') {
+      // Recorded for every reply, even once the daily XP cap zeroes the amount,
+      // so badge progress reflects real helping rather than the cap.
+      hiveReplies++
+    } else if (e.reason === 'hive_answer_approved') {
+      hiveApproved++
+    } else if (e.reason === 'hive_answer_accepted') {
+      hiveAccepted++
+    } else if (e.reason === 'hive_weekly_queen') {
+      hiveQueenWeeks++
     }
   }
 
@@ -140,6 +154,10 @@ export async function getStats(userId: string): Promise<BadgeStats> {
     bestEnglish,
     analogiesCreated,
     supportCompleted,
+    hiveReplies,
+    hiveApproved,
+    hiveAccepted,
+    hiveQueenWeeks,
   }
 }
 

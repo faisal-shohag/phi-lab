@@ -164,6 +164,294 @@
   .xp-shimmer::after { animation: none; }
 }
 
+/* ── Hive helpdesk: bee / honey theme ──────────────────────────────────────
+   Scoped to the Hive section via <div data-theme="hive">. Overriding the
+   shadcn CSS vars re-tints every component inside (buttons, rings, charts)
+   amber without touching the global pink theme. */
+[data-theme='hive'] {
+  --primary: oklch(0.77 0.155 74);            /* honey amber */
+  --primary-foreground: oklch(0.26 0.05 60);
+  --ring: oklch(0.77 0.155 74);
+  --accent: oklch(0.95 0.05 90);
+  --accent-foreground: oklch(0.34 0.07 60);
+  --sidebar-primary: oklch(0.77 0.155 74);
+  --sidebar-ring: oklch(0.77 0.155 74);
+  --chart-1: oklch(0.83 0.16 80);
+  --chart-2: oklch(0.75 0.16 66);
+  --chart-3: oklch(0.68 0.15 52);
+  --chart-4: oklch(0.88 0.13 92);
+  --chart-5: oklch(0.6 0.13 40);
+  --hive-honey: oklch(0.82 0.16 80);
+  --hive-comb: oklch(0.95 0.045 88);
+  --hive-amber-ring: oklch(0.77 0.155 74 / 35%);
+
+  /* Warm the neutrals so cards/borders sit inside the honey palette rather
+     than reading as grey rectangles dropped onto an amber page. */
+  --background: oklch(0.995 0.006 90);
+  --card: oklch(1 0.003 90);
+  --muted: oklch(0.968 0.011 88);
+  --muted-foreground: oklch(0.53 0.02 70);
+  --border: oklch(0.9 0.02 85);
+  --input: oklch(0.9 0.02 85);
+  --secondary: oklch(0.96 0.015 88);
+  --secondary-foreground: oklch(0.3 0.04 65);
+
+  /* Glass + gradient surface tokens, read by the utilities below. */
+  --hive-glass-bg: oklch(1 0 0 / 68%);
+  --hive-glass-border: oklch(1 0 0 / 75%);
+  --hive-glass-shadow: 0 1px 2px oklch(0.4 0.06 60 / 6%), 0 8px 24px -12px oklch(0.5 0.1 60 / 18%);
+  /* Nav sits far more transparent than a card — the blur separates it. */
+  --hive-nav-bg: oklch(0.995 0.012 88 / 55%);
+  --hive-nav-border: oklch(0.72 0.1 70 / 18%);
+  /* Light mode keeps a faint warm canvas and only whispers the glows — enough
+     to feel like honey, quiet enough to read a code block on top of. */
+ --hive-canvas: oklch(0.975 0.028 88);
+  --hive-glow-a: oklch(0.87 0.15 85 / 85%);
+  --hive-glow-b: oklch(0.83 0.14 55 / 65%);
+  --hive-glow-c: oklch(0.9 0.12 118 / 55%);
+}
+.dark [data-theme='hive'] {
+  --primary: oklch(0.78 0.155 80);
+  --primary-foreground: oklch(0.19 0.04 60);
+  --ring: oklch(0.78 0.155 80);
+  --accent: oklch(0.32 0.05 70);
+  --accent-foreground: oklch(0.92 0.05 88);
+  --hive-comb: oklch(0.28 0.03 72);
+  --hive-amber-ring: oklch(0.78 0.155 80 / 22%);
+
+  --background: oklch(0.16 0.012 75);
+  --card: oklch(0.213 0.014 75);
+  --card-foreground: oklch(0.97 0.008 90);
+  --popover: oklch(0.213 0.014 75);
+  --muted: oklch(0.27 0.014 75);
+  --muted-foreground: oklch(0.73 0.02 80);
+  --border: oklch(0.98 0.02 85 / 12%);
+  --input: oklch(0.98 0.02 85 / 16%);
+  --secondary: oklch(0.27 0.014 75);
+  --secondary-foreground: oklch(0.96 0.01 88);
+
+  --hive-glass-bg: oklch(0.24 0.016 75 / 62%);
+  --hive-glass-border: oklch(0.98 0.02 85 / 12%);
+  --hive-glass-shadow: 0 1px 2px oklch(0 0 0 / 30%), 0 12px 32px -16px oklch(0 0 0 / 60%);
+  --hive-nav-bg: oklch(0.19 0.014 74 / 55%);
+  --hive-nav-border: oklch(0.98 0.02 85 / 10%);
+  --hive-canvas: oklch(0.175 0.016 72);
+  --hive-glow-a: oklch(0.7 0.14 82 / 32%);
+  --hive-glow-b: oklch(0.58 0.13 45 / 26%);
+  --hive-glow-c: oklch(0.66 0.1 115 / 18%);
+}
+
+/* The page canvas: three soft, wide amber glows over a warm base. Fixed so it
+   never scrolls with content — ambient, not a pattern that competes for
+   attention. */
+.hive-shell {
+  position: relative;
+  isolation: isolate;
+}
+.hive-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  /* The warm base carries the amber even where no glow lands; the three radials
+     give it depth. Layered over `transparent` stops rather than a hard edge so
+     nothing reads as a visible seam. */
+  background:
+    radial-gradient(58rem 38rem at 6% -6%, var(--hive-glow-a), transparent 58%),
+    radial-gradient(48rem 32rem at 106% 4%, var(--hive-glow-b), transparent 60%),
+    radial-gradient(46rem 36rem at 44% 106%, var(--hive-glow-c), transparent 60%),
+    var(--hive-canvas);
+  pointer-events: none;
+}
+
+/* Frosted surface. Used for the primary content cards, so the amber canvas
+   glows through instead of being hidden behind flat panels. */
+.hive-glass {
+  background-color: var(--hive-glass-bg);
+  border: 1px solid var(--hive-glass-border);
+  box-shadow: var(--hive-glass-shadow);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+}
+
+/* The sticky nav. Thinner than a card on purpose: content has to be legibly
+   visible sliding underneath it, so the fill is much more transparent and the
+   blur does the separating instead. A top inner highlight catches the light and
+   a hairline bottom edge keeps it from bleeding into the page. */
+.hive-glass-nav {
+  background-color: var(--hive-nav-bg);
+  border: 0;
+  border-bottom: 1px solid var(--hive-nav-border);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 55%),
+    0 6px 24px -12px oklch(0.5 0.1 60 / 22%);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+.dark .hive-glass-nav {
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 7%),
+    0 6px 24px -12px oklch(0 0 0 / 60%);
+}
+
+/* Browsers without backdrop-filter would show text straight through the nav. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .hive-glass-nav {
+    background-color: var(--background);
+  }
+}
+
+/* True honeycomb tiling (offset hex dot-grid reads as dots, not comb). */
+.hive-hex-bg {
+  position: relative;
+  overflow: hidden;
+}
+.hive-hex-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.5;
+  background-image:
+    linear-gradient(150deg, var(--hive-amber-ring) 25%, transparent 25.5%, transparent 74.5%, var(--hive-amber-ring) 75%),
+    linear-gradient(30deg, var(--hive-amber-ring) 25%, transparent 25.5%, transparent 74.5%, var(--hive-amber-ring) 75%),
+    linear-gradient(90deg, transparent 46%, var(--hive-amber-ring) 46.5%, var(--hive-amber-ring) 53.5%, transparent 54%);
+  background-size: 36px 62px;
+  background-position: 0 0, 0 0, 0 0;
+  mask-image: radial-gradient(closest-side, black, transparent);
+}
+
+/* Primary Hive action. A honey gradient with a top sheen and a coloured shadow,
+   so the CTA reads as a lit surface rather than a flat amber rectangle.
+   `.hive-honey-fill` is the paint only — no positioning — so it can be dropped
+   onto an absolutely-positioned element (the sliding tab pill) without
+   `position: relative` here overriding its `absolute`. */
+.hive-cta,
+.hive-honey-fill {
+  border: 1px solid oklch(0.62 0.15 62 / 55%);
+  background-image: linear-gradient(to bottom, oklch(0.83 0.16 82), oklch(0.7 0.17 55));
+  color: oklch(0.22 0.05 55);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 45%),
+    0 1px 2px oklch(0.4 0.1 55 / 25%),
+    0 8px 20px -8px oklch(0.65 0.17 60 / 55%);
+}
+.hive-cta {
+  position: relative;
+  overflow: hidden;
+  transition: filter 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.hive-cta:hover {
+  filter: brightness(1.05);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 55%),
+    0 2px 4px oklch(0.4 0.1 55 / 25%),
+    0 12px 26px -8px oklch(0.65 0.17 60 / 65%);
+}
+.hive-cta:active {
+  transform: translateY(1px);
+  filter: brightness(0.98);
+}
+.dark .hive-cta,
+.dark .hive-honey-fill {
+  color: oklch(0.18 0.04 55);
+  border-color: oklch(0.55 0.14 60 / 60%);
+}
+
+/* Secondary/quiet actions: frosted, so they sit on the canvas without stealing
+   weight from the primary CTA. */
+.hive-btn-soft {
+  background-color: var(--hive-glass-bg);
+  border: 1px solid var(--hive-glass-border);
+  backdrop-filter: blur(10px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  box-shadow: 0 1px 2px oklch(0.4 0.06 60 / 6%);
+  transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+.hive-btn-soft:hover {
+  border-color: oklch(0.77 0.155 74 / 55%);
+  background-color: color-mix(in oklch, var(--hive-glass-bg), var(--primary) 8%);
+}
+.hive-btn-soft:active {
+  transform: translateY(1px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .hive-cta:active,
+  .hive-btn-soft:active { transform: none; }
+}
+
+/* Gentle hover lift shared by feed cards and Honeycomb entries. */
+.hive-lift {
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+.hive-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 4px oklch(0.4 0.06 60 / 8%), 0 16px 36px -18px oklch(0.5 0.12 60 / 32%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .hive-lift:hover { transform: none; }
+}
+
+/* ── Markdown rendering (scoped to .hive-md) ─────────────────────────────── */
+.hive-md {
+  font-size: 0.925rem;
+  line-height: 1.65;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.hive-md > :first-child { margin-top: 0; }
+.hive-md > :last-child { margin-bottom: 0; }
+.hive-md p { margin: 0.6em 0; }
+.hive-md h1, .hive-md h2, .hive-md h3 { font-weight: 650; line-height: 1.3; margin: 1em 0 0.5em; }
+.hive-md h1 { font-size: 1.3rem; }
+.hive-md h2 { font-size: 1.15rem; }
+.hive-md h3 { font-size: 1.03rem; }
+.hive-md ul, .hive-md ol { margin: 0.6em 0; padding-left: 1.4em; }
+.hive-md ul { list-style: disc; }
+.hive-md ol { list-style: decimal; }
+.hive-md li { margin: 0.25em 0; }
+.hive-md a { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
+.hive-md blockquote {
+  border-left: 3px solid var(--hive-honey);
+  padding-left: 0.9em;
+  margin: 0.7em 0;
+  color: var(--muted-foreground);
+}
+.hive-md :not(pre) > code {
+  background: var(--muted);
+  padding: 0.12em 0.38em;
+  border-radius: 0.35rem;
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+.hive-md pre {
+  background: oklch(0.16 0.01 250);
+  color: oklch(0.92 0 0);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.9rem 1rem;
+  margin: 0.8em 0;
+  overflow-x: auto;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+.hive-md pre code { font-family: var(--font-mono); background: transparent; padding: 0; }
+.hive-md table { border-collapse: collapse; margin: 0.7em 0; display: block; overflow-x: auto; }
+.hive-md th, .hive-md td { border: 1px solid var(--border); padding: 0.4em 0.7em; text-align: left; }
+.hive-md img { max-width: 100%; border-radius: var(--radius-md); }
+.hive-md hr { border: none; border-top: 1px solid var(--border); margin: 1em 0; }
+
+/* highlight.js token colors (github-dark-ish), scoped to Hive code blocks. */
+.hive-md .hljs-comment, .hive-md .hljs-quote { color: #8b949e; font-style: italic; }
+.hive-md .hljs-keyword, .hive-md .hljs-selector-tag, .hive-md .hljs-built_in { color: #ff7b72; }
+.hive-md .hljs-string, .hive-md .hljs-attr, .hive-md .hljs-template-string { color: #a5d6ff; }
+.hive-md .hljs-number, .hive-md .hljs-literal { color: #79c0ff; }
+.hive-md .hljs-title, .hive-md .hljs-title.function_ { color: #d2a8ff; }
+.hive-md .hljs-title.class_, .hive-md .hljs-type { color: #ffa657; }
+.hive-md .hljs-variable, .hive-md .hljs-property, .hive-md .hljs-params { color: #ffa657; }
+.hive-md .hljs-tag, .hive-md .hljs-name { color: #7ee787; }
+.hive-md .hljs-meta { color: #79c0ff; }
+
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: oklch(0.7 0 0 / 40%); border-radius: 9999px; }

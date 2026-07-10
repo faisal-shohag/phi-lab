@@ -1,12 +1,14 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
 import { UserMenu } from '@/components/auth/user-menu'
 import { XpBadge } from '@/components/gamification/xp-badge'
 import { Logo } from '@/components/brand/logo'
 import { Button } from '@/components/ui/button'
 
+// In-page anchors, plus Hive which is a real route rather than a section.
 const NAV_LINKS = [
   { href: '#labs', label: 'Labs' },
   { href: '#journey', label: 'Journey' },
@@ -35,6 +37,20 @@ export function LandingHeader() {
               {link.label}
             </a>
           ))}
+          <Link
+            href="/hive"
+            className="group inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <Image
+              src="/hive/honeycomb.png"
+              alt=""
+              aria-hidden
+              width={40}
+              height={40}
+              className="size-4 select-none transition-transform group-hover:scale-110"
+            />
+            Hive
+          </Link>
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
