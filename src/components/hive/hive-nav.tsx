@@ -20,6 +20,9 @@ export function HiveNav({ role }: { role: 'STUDENT' | 'MENTOR' | 'ADMIN' }) {
     { href: '/hive', label: 'Feed', exact: true },
     { href: '/hive/honeycomb', label: 'Honeycomb' },
     ...(isMentor ? [{ href: '/hive/mentor', label: 'Mentor' }] : []),
+    // The admin dashboard lives outside Hive, but this is the only nav a signed-in
+    // admin reliably passes through.
+    ...(role === 'ADMIN' ? [{ href: '/admin', label: 'Admin' }] : []),
   ]
 
   function active(href: string, exact?: boolean) {

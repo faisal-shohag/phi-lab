@@ -3,6 +3,7 @@
 // problem, something on their mind, or where to go next in their learning.
 // There is no grading; the point is to help in the moment. Framework-free so
 // both the client and the token route can import it.
+import { spokenDuration } from '@/lib/labs/duration'
 
 export interface SupportCategory {
   id: string
@@ -108,10 +109,17 @@ export function supportLanguageById(id: string): SupportLanguage | undefined {
   return SUPPORT_LANGUAGES.find((l) => l.id === id)
 }
 
-/** Length of a single support session, in seconds (10 minutes). */
+/**
+ * Default length of a single support session, in seconds (10 minutes). The live
+ * value is admin-tunable (`lab.support.roundSeconds`) and reaches the browser on
+ * the token response; this is the pre-connect placeholder.
+ */
 export const SUPPORT_SECONDS = 600
 
-/** Max active sessions across the whole platform. */
+/**
+ * Default max active sessions across the whole platform. Admin-tunable via
+ * `lab.support.maxActiveSessions`; read at runtime by src/lib/support/queue.ts.
+ */
 export const MAX_ACTIVE_SESSIONS = 3
 
 /** How long an active session may go without a heartbeat before its slot frees. */
@@ -124,9 +132,14 @@ export function supportCategoryById(id: string): SupportCategory | undefined {
 /**
  * System instruction for the AI supporter. It stays warm and patient, adapts to
  * the chosen category, opens already aware of the learner's written problem, and
- * wraps up gracefully near the ~10-minute mark.
+ * wraps up gracefully near the end of the (admin-tunable) session length.
  */
-export function buildSupportInstruction(categoryId: string, problem: string, languageId = 'en'): string {
+export function buildSupportInstruction(
+  categoryId: string,
+  problem: string,
+  languageId = 'en',
+  roundSeconds: number = SUPPORT_SECONDS,
+): string {
   const category = supportCategoryById(categoryId)
   const role = category?.role ?? 'a warm, supportive helper'
   const language = supportLanguageById(languageId) ?? SUPPORT_LANGUAGES[0]
@@ -147,7 +160,7 @@ export function buildSupportInstruction(categoryId: string, problem: string, lan
     '- Never rush them or make them feel judged.',
     ...(category?.extra ?? []),
     '',
-    'This is a short session of about 10 minutes. Use the time well, and when you are told time is almost up, warmly help them land on a next step or a kind closing thought, then stop.',
+    `This is a short session of about ${spokenDuration(roundSeconds)}. Use the time well, and when you are told time is almost up, warmly help them land on a next step or a kind closing thought, then stop.`,
     'Ending the call: when the learner clearly signals they are done — their problem is solved, they got what they needed, or they say they want to stop — first check gently ("Are you all set for now?"), say a warm one-sentence goodbye, and THEN call the end_session tool to hang up. Do not call end_session while the learner still needs help or without saying goodbye first.',
     'Begin only when prompted: greet the learner by acknowledging what they came for, and gently open the conversation.',
   ]

@@ -15,6 +15,7 @@ import { createMicStream, createPlaybackQueue, type MicStream, type PlaybackQueu
 import { ROUND_SECONDS } from './concepts'
 import type { FeynmanReport } from './report-types'
 import type { InterviewErrorCode } from '@/lib/interview/errors'
+import { useLiveUsageReporter } from '@/lib/ai-usage/live-reporter'
 
 const LIVE_MODEL = 'gemini-3.1-flash-live-preview'
 const WRAP_UP_AT = 15
@@ -86,6 +87,9 @@ export function useFeynman(): UseFeynman {
   const [concept, setConcept] = useState<string | null>(null)
   const [language, setLanguage] = useState<LanguageId>('en')
   const [characterId, setCharacterId] = useState('nova')
+
+  // Live token counts are only visible in the browser; this ships them home.
+  const usageReporter = useLiveUsageReporter('FEYNMAN')
 
   const phaseRef = useRef<FeynmanPhase>('idle')
   const setPhase = useCallback((p: FeynmanPhase) => {
@@ -187,6 +191,9 @@ export function useFeynman(): UseFeynman {
     finishingRef.current = true
     reconnectingRef.current = false
 
+    // Before the socket closes: ship the round's token totals.
+    usageReporter.flush()
+
     stopTimers()
     intentionalCloseRef.current = true
     micRef.current?.stop()
@@ -210,12 +217,16 @@ export function useFeynman(): UseFeynman {
 
     await syncTranscript(true)
     await requestReport()
-  }, [stopTimers, setPhase, syncTranscript, requestReport])
+  }, [stopTimers, setPhase, syncTranscript, requestReport, usageReporter])
 
   const finishRef = useRef<() => Promise<void>>(() => Promise.resolve())
   useEffect(() => { finishRef.current = finish }, [finish])
 
   const handleMessage = useCallback((msg: LiveServerMessage) => {
+    // Token counts for this round only reach us here — the socket is
+    // browser-to-Google. Cumulative, so the reporter keeps the latest.
+    usageReporter.observe(msg.usageMetadata)
+
     const resume = msg.sessionResumptionUpdate
     if (resume?.resumable && resume.newHandle) {
       resumeHandleRef.current = resume.newHandle
@@ -247,7 +258,7 @@ export function useFeynman(): UseFeynman {
         if ((playbackRef.current?.pendingSeconds() ?? 0) <= 0.05) setStudentSpeaking(false)
       }, 200)
     }
-  }, [appendTranscript])
+  }, [appendTranscript, usageReporter])
 
   const startCountdown = useCallback(() => {
     if (countdownRef.current) return
@@ -291,9 +302,26 @@ export function useFeynman(): UseFeynman {
       e.code = code
       throw e
     }
-    const { token, sessionId } = (await tokenRes.json()) as { token: string; sessionId: string; roundSeconds: number }
+    const { token, sessionId, roundSeconds } = (await tokenRes.json()) as {
+      token: string
+      sessionId: string
+      roundSeconds: number
+    }
     if (!token) throw new Error('Server did not return a session token.')
     if (sessionId) sessionIdRef.current = sessionId
+
+    // The round length is admin-tunable, so the server is the authority — the
+    // ROUND_SECONDS constant is only the pre-connect placeholder. On a resume
+    // the countdown is already mid-flight; don't reset it.
+    if (!resume && Number.isFinite(roundSeconds) && roundSeconds > 0) {
+      secondsLeftRef.current = roundSeconds
+      setSecondsLeft(roundSeconds)
+    }
+
+    // Start the usage clock on a fresh round only. A reconnect continues the
+    // same round, and re-beginning would reset its duration and drop the tokens
+    // accumulated before the drop.
+    if (!resume && sessionIdRef.current) usageReporter.begin(sessionIdRef.current)
 
     if (!playbackRef.current) {
       const playback = createPlaybackQueue()
@@ -314,7 +342,7 @@ export function useFeynman(): UseFeynman {
     })
     sessionRef.current = session
     return session
-  }, [handleMessage])
+  }, [handleMessage, usageReporter])
 
   const handleDrop = useCallback(async () => {
     if (intentionalCloseRef.current || finishingRef.current) return

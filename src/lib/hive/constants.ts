@@ -19,6 +19,7 @@ export const MAX_BODY_LEN = 8000
 
 // Daily rate limits (per user), enforced inline via XpEvent/row counts.
 export const DAILY_POST_LIMIT = 30
+/** Default only — the live value is admin-tunable via `hive.dailyCoachLimit`. */
 export const DAILY_COACH_LIMIT = 20
 export const DAILY_XP_REPLIES = 5 // replies that earn XP per day
 

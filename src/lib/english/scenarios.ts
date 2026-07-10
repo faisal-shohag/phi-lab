@@ -2,6 +2,7 @@
 // The learner practises spoken technical English; the AI plays a role
 // (interviewer, manager, teammate) and keeps the conversation going. Voice
 // personas are reused from the interview lab. Framework-free.
+import { spokenDuration } from '@/lib/labs/duration'
 
 export interface Scenario {
   id: string
@@ -91,6 +92,8 @@ export function scenarioById(id: string): Scenario | undefined {
 export interface CoachInstructionOptions {
   /** Persona name the coach may use to introduce themselves. */
   personaName?: string
+  /** Round length in seconds, so the prompt's pacing matches the actual timer. */
+  roundSeconds?: number
 }
 
 /**
@@ -102,7 +105,7 @@ export function buildCoachInstruction(
   scenarioId: string,
   opts: CoachInstructionOptions = {},
 ): string {
-  const { personaName } = opts
+  const { personaName, roundSeconds = ROUND_SECONDS } = opts
   const scenario = scenarioById(scenarioId)
   const role = scenario?.role ?? 'a friendly conversation partner'
 
@@ -118,7 +121,7 @@ export function buildCoachInstruction(
     '- Be warm and encouraging. This is practice; help them feel comfortable speaking.',
     ...(scenario?.extra ?? []),
     '',
-    'The session lasts about 3 minutes. When you are told time is up, thank them warmly in one sentence and stop.',
+    `The session lasts about ${spokenDuration(roundSeconds)}. When you are told time is up, thank them warmly in one sentence and stop.`,
     'Begin only when prompted: greet the learner in one sentence in your role and ask your first question.',
   ]
 

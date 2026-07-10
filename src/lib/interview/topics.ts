@@ -1,6 +1,7 @@
 // Topic + level catalog and interviewer persona for the live technical
 // interview lab. Kept framework-free so both the client page and the server
 // report route can import it.
+import { spokenDuration } from '@/lib/labs/duration'
 
 export type LevelId = 'easy' | 'medium' | 'expert'
 
@@ -128,7 +129,12 @@ export const CHARACTERS: Character[] = [
   { id: 'lyra', voiceName: 'Aoede', name: 'Lyra', description: 'Bright and friendly', gradient: 'from-violet-500 to-purple-600' },
 ]
 
-/** Length of a single interview round, in seconds. */
+/**
+ * Default length of a single interview round, in seconds. The live value is
+ * admin-tunable (`lab.interview.roundSeconds`) and reaches the browser on the
+ * token response; this constant is the pre-connect placeholder and the value
+ * SETTING_DEFAULTS mirrors.
+ */
 export const ROUND_SECONDS = 180
 
 export function topicById(id: string): Topic | undefined {
@@ -151,6 +157,8 @@ export interface SystemInstructionOptions {
   language?: LanguageId
   /** When true, open with a brief "tell me about yourself" icebreaker. */
   includeIntro?: boolean
+  /** Round length in seconds, so the prompt's pacing matches the actual timer. */
+  roundSeconds?: number
   /** Persona name the interviewer may use to introduce themselves. */
   personaName?: string
   /** Interviewer demeanor / stress level. Defaults to 'neutral'. */
@@ -185,7 +193,13 @@ export function buildSystemInstruction(
   level: LevelId,
   opts: SystemInstructionOptions = {},
 ): string {
-  const { language = 'en', includeIntro = false, personaName, pressure = 'neutral' } = opts
+  const {
+    language = 'en',
+    includeIntro = false,
+    personaName,
+    pressure = 'neutral',
+    roundSeconds = ROUND_SECONDS,
+  } = opts
   const topic = topicById(topicId)
   const lvl = levelById(level)
   const topicLabel = topic?.label ?? topicId
@@ -222,7 +236,7 @@ export function buildSystemInstruction(
 
   lines.push(
     '',
-    'The entire round lasts about 3 minutes. When you are told that time is up, thank the candidate warmly in one sentence and stop asking questions.',
+    `The entire round lasts about ${spokenDuration(roundSeconds)}. When you are told that time is up, thank the candidate warmly in one sentence and stop asking questions.`,
     'Begin only when the candidate speaks or when prompted to start.',
   )
 

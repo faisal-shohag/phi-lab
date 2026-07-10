@@ -4,13 +4,16 @@ import { requireUser } from '@/lib/auth-server'
 import { errorResponse } from '@/lib/interview/errors'
 import { prisma } from '@/lib/prisma'
 import { awardXp } from '@/lib/gamification/award'
+import { getSetting } from '@/lib/admin/settings'
+import { isSuspended } from '@/lib/admin/suspension'
+import { recordAiUsage } from '@/lib/ai-usage/record'
+import { normalizeTokens } from '@/lib/ai-usage/tokens'
 
 // Generates a culturally-native "rickshaw" analogy for a concept and saves it as
 // a shareable card. Uses a standard text model with a responseSchema so the card
 // always has the fields the UI needs.
 
 const MODEL = 'gemini-3.1-flash-lite'
-const DAILY_LIMIT = 40
 
 function startOfTodayUTC(): Date {
   const d = new Date()
@@ -56,6 +59,9 @@ export async function POST(request: Request) {
   const user = await requireUser()
   if (!user) return errorResponse('AUTH_REQUIRED')
 
+  if (!(await getSetting('flag.lab.analogies.enabled'))) return errorResponse('LAB_DISABLED')
+  if (await isSuspended(user.id)) return errorResponse('SUSPENDED')
+
   let concept = ''
   let language: AnalogyLanguage = 'en'
   try {
@@ -70,13 +76,25 @@ export async function POST(request: Request) {
   const todayCount = await prisma.analogyCard.count({
     where: { userId: user.id, createdAt: { gte: startOfTodayUTC() } },
   })
-  if (todayCount >= DAILY_LIMIT) return errorResponse('DAILY_LIMIT')
+  if (todayCount >= (await getSetting('lab.analogies.dailyLimit'))) return errorResponse('DAILY_LIMIT')
 
   const prompt = [
     `Explain the programming concept "${concept}" using a vivid, culturally-native everyday analogy from daily life in Bangladesh / South Asia (rickshaws, tea stalls, tiffin boxes, bazaars, buses, queues, etc.).`,
     'Make it accurate, memorable and a little fun. The mapping rows should tie specific parts of the concept to specific parts of the everyday scene.',
     langInstruction(language),
   ].join('\n')
+
+  // Telemetry context shared by the success and failure paths below. Analogies
+  // have no session row, so sessionId stays null.
+  const startedAt = Date.now()
+  const usageBase = {
+    feature: 'ANALOGIES',
+    task: 'GENERATE',
+    provider: 'GEMINI',
+    model: MODEL,
+    tryIndex: 1,
+    userId: user.id,
+  } as const
 
   let card: Omit<AnalogyCardData, 'concept' | 'language' | 'id'>
   try {
@@ -87,10 +105,35 @@ export async function POST(request: Request) {
       config: { responseMimeType: 'application/json', responseSchema: SCHEMA },
     })
     const text = response.text
-    if (!text) return errorResponse('SERVER_ERROR', 'The model returned an empty analogy.')
+    if (!text) {
+      void recordAiUsage({
+        ...usageBase,
+        success: false,
+        latencyMs: Date.now() - startedAt,
+        tokens: normalizeTokens(response.usageMetadata),
+        errorKind: 'TRUNCATED',
+        errorMessage: 'the model returned an empty analogy',
+      })
+      return errorResponse('SERVER_ERROR', 'The model returned an empty analogy.')
+    }
+
     card = JSON.parse(text)
+
+    void recordAiUsage({
+      ...usageBase,
+      success: true,
+      latencyMs: Date.now() - startedAt,
+      tokens: normalizeTokens(response.usageMetadata),
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
+    void recordAiUsage({
+      ...usageBase,
+      success: false,
+      latencyMs: Date.now() - startedAt,
+      errorKind: err instanceof SyntaxError ? 'INVALID_JSON' : 'UNKNOWN',
+      errorMessage: message,
+    })
     return errorResponse('SERVER_ERROR', `Failed to generate analogy: ${message}`)
   }
 

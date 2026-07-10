@@ -1,16 +1,20 @@
 import { GoogleGenAI, Modality } from '@google/genai'
 import { characterById, CHARACTERS, languageById, type LanguageId } from '@/lib/interview/topics'
-import { buildTeachbackInstruction, ROUND_SECONDS } from '@/lib/feynman/concepts'
+import { buildTeachbackInstruction } from '@/lib/feynman/concepts'
 import { requireUser } from '@/lib/auth-server'
 import { errorResponse } from '@/lib/interview/errors'
 import { prisma } from '@/lib/prisma'
+import { getSetting } from '@/lib/admin/settings'
+import { isSuspended } from '@/lib/admin/suspension'
 
 // Mints a single-use ephemeral Gemini Live token for a teach-back session. The
 // full Live config (voice, language, and the "curious beginner" persona) is
 // locked into the token, exactly like the interview lab.
+//
+// Also the enforcement choke point for the admin kill switch, the daily cap,
+// and account suspension: no token, no round.
 
-const LIVE_MODEL = 'gemini-3.1-flash-live-preview'
-const DAILY_LIMIT = 10
+export const LIVE_MODEL = 'gemini-3.1-flash-live-preview'
 
 function startOfTodayUTC(): Date {
   const d = new Date()
@@ -23,6 +27,9 @@ export async function POST(request: Request) {
 
   const user = await requireUser()
   if (!user) return errorResponse('AUTH_REQUIRED')
+
+  if (!(await getSetting('flag.lab.feynman.enabled'))) return errorResponse('LAB_DISABLED')
+  if (await isSuspended(user.id)) return errorResponse('SUSPENDED')
 
   let concept = ''
   let language: LanguageId = 'en'
@@ -59,7 +66,7 @@ export async function POST(request: Request) {
       const todayCount = await prisma.feynmanSession.count({
         where: { userId: user.id, createdAt: { gte: startOfTodayUTC() } },
       })
-      if (todayCount >= DAILY_LIMIT) return errorResponse('DAILY_LIMIT')
+      if (todayCount >= (await getSetting('lab.feynman.dailyLimit'))) return errorResponse('DAILY_LIMIT')
 
       const created = await prisma.feynmanSession.create({
         data: { userId: user.id, concept, language, voice: voiceName, status: 'IN_PROGRESS' },
@@ -75,11 +82,15 @@ export async function POST(request: Request) {
     const ai = new GoogleGenAI({ apiKey })
     const now = Date.now()
     const speechCode = languageById(language)?.speechCode ?? 'en-US'
+    // One resolve, used twice: the prompt's pacing and the client's countdown
+    // must agree, or the AI wraps up at a different time than the timer.
+    const roundSeconds = await getSetting('lab.feynman.roundSeconds')
 
     const token = await ai.authTokens.create({
       config: {
         uses: 1,
-        expireTime: new Date(now + 5 * 60 * 1000).toISOString(),
+        // Must outlive the round, plus reconnect headroom.
+        expireTime: new Date(now + Math.max(5 * 60, roundSeconds + 120) * 1000).toISOString(),
         newSessionExpireTime: new Date(now + 2 * 60 * 1000).toISOString(),
         liveConnectConstraints: {
           model: LIVE_MODEL,
@@ -92,14 +103,14 @@ export async function POST(request: Request) {
             inputAudioTranscription: {},
             outputAudioTranscription: {},
             sessionResumption: resumeHandle ? { handle: resumeHandle } : {},
-            systemInstruction: buildTeachbackInstruction(concept, { language, personaName }),
+            systemInstruction: buildTeachbackInstruction(concept, { language, personaName, roundSeconds }),
           },
         },
         httpOptions: { apiVersion: 'v1alpha' },
       },
     })
 
-    return Response.json({ token: token.name, sessionId, roundSeconds: ROUND_SECONDS })
+    return Response.json({ token: token.name, sessionId, roundSeconds })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     return errorResponse('CONNECT_FAILED', `Failed to mint teach-back token: ${message}`)

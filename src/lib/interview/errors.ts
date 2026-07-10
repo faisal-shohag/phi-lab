@@ -4,6 +4,8 @@
 
 export type InterviewErrorCode =
   | 'AUTH_REQUIRED'
+  | 'SUSPENDED'
+  | 'LAB_DISABLED'
   | 'DAILY_LIMIT'
   | 'CONNECT_FAILED'
   | 'LIVE_DROPPED'
@@ -20,6 +22,14 @@ export const ERROR_COPY: Record<InterviewErrorCode, ErrorCopy> = {
   AUTH_REQUIRED: {
     title: 'Please sign in',
     message: 'You need to be signed in to start an interview.',
+  },
+  SUSPENDED: {
+    title: 'Account suspended',
+    message: 'Your account has been suspended. Contact an administrator if you think this is a mistake.',
+  },
+  LAB_DISABLED: {
+    title: 'Temporarily unavailable',
+    message: 'Mock interviews are switched off right now. Please check back shortly.',
   },
   DAILY_LIMIT: {
     title: 'Daily limit reached',
@@ -50,6 +60,8 @@ export const ERROR_COPY: Record<InterviewErrorCode, ErrorCopy> = {
 /** HTTP status to use for each error code when returned from a route. */
 export const ERROR_STATUS: Record<InterviewErrorCode, number> = {
   AUTH_REQUIRED: 401,
+  SUSPENDED: 403,
+  LAB_DISABLED: 503,
   DAILY_LIMIT: 429,
   CONNECT_FAILED: 502,
   LIVE_DROPPED: 500,

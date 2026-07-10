@@ -16,6 +16,7 @@ import { createMicStream, createPlaybackQueue, type MicStream, type PlaybackQueu
 import { startScreenShare, type ScreenShare } from './screen-share'
 import { SUPPORT_SECONDS } from './prompt'
 import type { InterviewErrorCode } from '@/lib/interview/errors'
+import { useLiveUsageReporter } from '@/lib/ai-usage/live-reporter'
 
 const LIVE_MODEL = 'gemini-3.1-flash-live-preview'
 const WRAP_UP_AT = 40
@@ -93,6 +94,9 @@ export function useSupport(): UseSupport {
   const [queuePosition, setQueuePosition] = useState(0)
   const [sharing, setSharing] = useState(false)
   const [feedbackSent, setFeedbackSent] = useState(false)
+
+  // Live token counts are only visible in the browser; this ships them home.
+  const usageReporter = useLiveUsageReporter('SUPPORT')
 
   const phaseRef = useRef<SupportPhase>('idle')
   const setPhase = useCallback((p: SupportPhase) => {
@@ -179,6 +183,10 @@ export function useSupport(): UseSupport {
     finishingRef.current = true
     reconnectingRef.current = false
 
+    // Before the socket closes: ship the session's token totals. Support has no
+    // report route, so this is the ONLY token signal this lab ever produces.
+    usageReporter.flush()
+
     stopTimers()
     intentionalCloseRef.current = true
     stopShare()
@@ -213,12 +221,16 @@ export function useSupport(): UseSupport {
     }
 
     setPhase('feedback')
-  }, [stopTimers, stopShare, syncTranscript, setPhase])
+  }, [stopTimers, stopShare, syncTranscript, setPhase, usageReporter])
 
   const finishRef = useRef<() => Promise<void>>(() => Promise.resolve())
   useEffect(() => { finishRef.current = finish }, [finish])
 
   const handleMessage = useCallback((msg: LiveServerMessage) => {
+    // Token counts for this session only reach us here — the socket is
+    // browser-to-Google. Cumulative, so the reporter keeps the latest.
+    usageReporter.observe(msg.usageMetadata)
+
     const resume = msg.sessionResumptionUpdate
     if (resume?.resumable && resume.newHandle) {
       resumeHandleRef.current = resume.newHandle
@@ -264,7 +276,7 @@ export function useSupport(): UseSupport {
         if ((playbackRef.current?.pendingSeconds() ?? 0) <= 0.05) setAgentSpeaking(false)
       }, 200)
     }
-  }, [appendTranscript])
+  }, [appendTranscript, usageReporter])
 
   const startCountdown = useCallback(() => {
     if (countdownRef.current) return
@@ -307,8 +319,21 @@ export function useSupport(): UseSupport {
       e.code = code
       throw e
     }
-    const { token } = (await tokenRes.json()) as { token: string; roundSeconds: number }
+    const { token, roundSeconds } = (await tokenRes.json()) as { token: string; roundSeconds: number }
     if (!token) throw new Error('Server did not return a session token.')
+
+    // The session length is admin-tunable, so the server is the authority — the
+    // SUPPORT_SECONDS constant is only the pre-connect placeholder. On a resume
+    // the countdown is already mid-flight; don't reset it.
+    if (!resume && Number.isFinite(roundSeconds) && roundSeconds > 0) {
+      secondsLeftRef.current = roundSeconds
+      setSecondsLeft(roundSeconds)
+    }
+
+    // Start the usage clock on a fresh session only. A reconnect continues the
+    // same session, and re-beginning would reset its duration and drop the
+    // tokens accumulated before the drop.
+    if (!resume && sessionIdRef.current) usageReporter.begin(sessionIdRef.current)
 
     if (!playbackRef.current) {
       const playback = createPlaybackQueue()
@@ -329,7 +354,7 @@ export function useSupport(): UseSupport {
     })
     sessionRef.current = session
     return session
-  }, [handleMessage])
+  }, [handleMessage, usageReporter])
 
   const handleDrop = useCallback(async () => {
     if (intentionalCloseRef.current || finishingRef.current) return

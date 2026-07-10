@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
@@ -8,12 +9,16 @@ import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
 import { Logo } from '@/components/brand/logo'
 import { Button } from '@/components/ui/button'
 
+// Shared by generateMetadata and the page component — cache() dedupes the
+// lookup so both share one DB round trip instead of two.
+const loadCard = cache((id: string) => prisma.analogyCard.findUnique({ where: { id } }))
+
 // Public share page — anyone with the link can view the analogy card.
 export async function generateMetadata(
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Metadata> {
   const { id } = await params
-  const card = await prisma.analogyCard.findUnique({ where: { id }, select: { title: true, concept: true } })
+  const card = await loadCard(id)
   if (!card) return { title: 'Analogy' }
   return {
     title: `${card.title} — ${card.concept} explained`,
@@ -25,7 +30,7 @@ export default async function AnalogySharePage(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
-  const row = await prisma.analogyCard.findUnique({ where: { id } })
+  const row = await loadCard(id)
   if (!row) notFound()
 
   const data: AnalogyCardData = {

@@ -13,7 +13,7 @@ import { generateStructured, generateStructuredWithMeta, type ProviderId } from 
 import type { AiCallContext } from './usage'
 
 /** Callers pass who/what a call is for so its usage row is attributable. */
-export type CallScope = Omit<AiCallContext, 'task'>
+export type CallScope = Omit<AiCallContext, 'task' | 'feature'>
 
 // ── Triage ────────────────────────────────────────────────────────────────
 // Runs inline on post creation: it decides tags/topic/severity and, crucially,

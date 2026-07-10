@@ -1,15 +1,19 @@
 import { GoogleGenAI, Modality } from '@google/genai'
 import { characterById, CHARACTERS } from '@/lib/interview/topics'
-import { buildCoachInstruction, ROUND_SECONDS } from '@/lib/english/scenarios'
+import { buildCoachInstruction } from '@/lib/english/scenarios'
 import { requireUser } from '@/lib/auth-server'
 import { errorResponse } from '@/lib/interview/errors'
 import { prisma } from '@/lib/prisma'
+import { getSetting } from '@/lib/admin/settings'
+import { isSuspended } from '@/lib/admin/suspension'
 
 // Mints a single-use ephemeral Gemini Live token for an English-practice
 // session. The AI coach always speaks English (en-US); the learner practises.
+//
+// Also the enforcement choke point for the admin kill switch, the daily cap,
+// and account suspension: no token, no round.
 
-const LIVE_MODEL = 'gemini-3.1-flash-live-preview'
-const DAILY_LIMIT = 10
+export const LIVE_MODEL = 'gemini-3.1-flash-live-preview'
 
 function startOfTodayUTC(): Date {
   const d = new Date()
@@ -22,6 +26,9 @@ export async function POST(request: Request) {
 
   const user = await requireUser()
   if (!user) return errorResponse('AUTH_REQUIRED')
+
+  if (!(await getSetting('flag.lab.english.enabled'))) return errorResponse('LAB_DISABLED')
+  if (await isSuspended(user.id)) return errorResponse('SUSPENDED')
 
   let scenario = ''
   let characterId = 'nova'
@@ -55,7 +62,7 @@ export async function POST(request: Request) {
       const todayCount = await prisma.englishSession.count({
         where: { userId: user.id, createdAt: { gte: startOfTodayUTC() } },
       })
-      if (todayCount >= DAILY_LIMIT) return errorResponse('DAILY_LIMIT')
+      if (todayCount >= (await getSetting('lab.english.dailyLimit'))) return errorResponse('DAILY_LIMIT')
 
       const created = await prisma.englishSession.create({
         data: { userId: user.id, scenario, voice: voiceName, status: 'IN_PROGRESS' },
@@ -70,11 +77,15 @@ export async function POST(request: Request) {
   try {
     const ai = new GoogleGenAI({ apiKey })
     const now = Date.now()
+    // One resolve, used twice: the prompt's pacing and the client's countdown
+    // must agree, or the coach wraps up at a different time than the timer.
+    const roundSeconds = await getSetting('lab.english.roundSeconds')
 
     const token = await ai.authTokens.create({
       config: {
         uses: 1,
-        expireTime: new Date(now + 5 * 60 * 1000).toISOString(),
+        // Must outlive the round, plus reconnect headroom.
+        expireTime: new Date(now + Math.max(5 * 60, roundSeconds + 120) * 1000).toISOString(),
         newSessionExpireTime: new Date(now + 2 * 60 * 1000).toISOString(),
         liveConnectConstraints: {
           model: LIVE_MODEL,
@@ -87,14 +98,14 @@ export async function POST(request: Request) {
             inputAudioTranscription: {},
             outputAudioTranscription: {},
             sessionResumption: resumeHandle ? { handle: resumeHandle } : {},
-            systemInstruction: buildCoachInstruction(scenario, { personaName }),
+            systemInstruction: buildCoachInstruction(scenario, { personaName, roundSeconds }),
           },
         },
         httpOptions: { apiVersion: 'v1alpha' },
       },
     })
 
-    return Response.json({ token: token.name, sessionId, roundSeconds: ROUND_SECONDS })
+    return Response.json({ token: token.name, sessionId, roundSeconds })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     return errorResponse('CONNECT_FAILED', `Failed to mint practice token: ${message}`)

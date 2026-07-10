@@ -164,6 +164,40 @@
   .xp-shimmer::after { animation: none; }
 }
 
+/* ── Admin: categorical series palette ────────────────────────────────────
+   The global --chart-1..5 vars are a single-hue pink ramp — a *sequential*
+   scale. Correct for magnitude, wrong for identity: six AI features are
+   categories, not degrees of one thing, and a ramp makes "Feynman" look like
+   "more Hive". So the admin charts get their own categorical hues.
+
+   Slot order is the colour-blind-safety mechanism, not a preference. It was
+   chosen by enumerating all 720 orderings and keeping the one that maximises
+   the minimum adjacent CVD ΔE across BOTH modes: worst adjacent pair is
+   ΔE 47.2 (light) / 41.3 (dark) under protanopia, against a ≥12 target.
+   Re-run the validator before reordering or adding a seventh slot.
+
+   Light mode: aqua and yellow fall below 3:1 against a white card, which
+   obligates relief — every chart using these ships a legend AND the same
+   numbers as a table, so identity never rests on colour alone. */
+[data-viz='admin'] {
+  --series-1: #1baf7a; /* aqua   */
+  --series-2: #eda100; /* yellow */
+  --series-3: #2a78d6; /* blue   */
+  --series-4: #008300; /* green  */
+  --series-5: #4a3aa7; /* violet */
+  --series-6: #e34948; /* red    */
+}
+.dark [data-viz='admin'],
+[data-viz='admin'].dark {
+  /* The same six hues, re-stepped for the dark surface — not an auto-flip. */
+  --series-1: #199e70;
+  --series-2: #c98500;
+  --series-3: #3987e5;
+  --series-4: #008300;
+  --series-5: #9085e9;
+  --series-6: #e66767;
+}
+
 /* ── Hive helpdesk: bee / honey theme ──────────────────────────────────────
    Scoped to the Hive section via <div data-theme="hive">. Overriding the
    shadcn CSS vars re-tints every component inside (buttons, rings, charts)

@@ -10,6 +10,7 @@ import { ROUND_SECONDS, characterById, type LanguageId, type LevelId, type Press
 import { createMicStream, createPlaybackQueue, type MicStream, type PlaybackQueue } from './audio'
 import type { InterviewReport } from './report-types'
 import type { InterviewErrorCode } from './errors'
+import { useLiveUsageReporter } from '@/lib/ai-usage/live-reporter'
 
 const LIVE_MODEL = 'gemini-3.1-flash-live-preview'
 const WRAP_UP_AT = 15 // seconds remaining when we nudge the model to wrap up.
@@ -86,6 +87,9 @@ export function useInterview(): UseInterview {
   const [pressure, setPressure] = useState<PressureId>('neutral')
   const [language, setLanguage] = useState<LanguageId>('en')
   const [characterId, setCharacterId] = useState('nova')
+
+  // Live token counts are only visible in the browser; this ships them home.
+  const usageReporter = useLiveUsageReporter('INTERVIEW')
 
   // Keep a synchronous mirror of phase so socket callbacks never read stale state.
   const phaseRef = useRef<InterviewPhase>('idle')
@@ -193,6 +197,9 @@ export function useInterview(): UseInterview {
     finishingRef.current = true
     reconnectingRef.current = false
 
+    // Before the socket closes: ship the round's token totals.
+    usageReporter.flush()
+
     stopTimers()
     intentionalCloseRef.current = true
     micRef.current?.stop()
@@ -217,12 +224,16 @@ export function useInterview(): UseInterview {
     // Persist the final transcript so the report reads a complete record.
     await syncTranscript(true)
     await requestReport()
-  }, [stopTimers, setPhase, syncTranscript, requestReport])
+  }, [stopTimers, setPhase, syncTranscript, requestReport, usageReporter])
 
   const finishRef = useRef<() => Promise<void>>(() => Promise.resolve())
   useEffect(() => { finishRef.current = finish }, [finish])
 
   const handleMessage = useCallback((msg: LiveServerMessage) => {
+    // Token counts for this round only reach us here — the socket is
+    // browser-to-Google. Cumulative, so the reporter keeps the latest.
+    usageReporter.observe(msg.usageMetadata)
+
     // Capture resumption handles so we can restore the session after a drop.
     const resume = msg.sessionResumptionUpdate
     if (resume?.resumable && resume.newHandle) {
@@ -254,7 +265,7 @@ export function useInterview(): UseInterview {
         if ((playbackRef.current?.pendingSeconds() ?? 0) <= 0.05) setModelSpeaking(false)
       }, 200)
     }
-  }, [appendTranscript])
+  }, [appendTranscript, usageReporter])
 
   const startCountdown = useCallback(() => {
     if (countdownRef.current) return
@@ -302,9 +313,26 @@ export function useInterview(): UseInterview {
       e.code = code
       throw e
     }
-    const { token, sessionId } = (await tokenRes.json()) as { token: string; sessionId: string; roundSeconds: number }
+    const { token, sessionId, roundSeconds } = (await tokenRes.json()) as {
+      token: string
+      sessionId: string
+      roundSeconds: number
+    }
     if (!token) throw new Error('Server did not return an interview token.')
     if (sessionId) sessionIdRef.current = sessionId
+
+    // The round length is admin-tunable, so the server is the authority — the
+    // ROUND_SECONDS constant is only the pre-connect placeholder. On a resume
+    // the countdown is already mid-flight; don't reset it.
+    if (!resume && Number.isFinite(roundSeconds) && roundSeconds > 0) {
+      secondsLeftRef.current = roundSeconds
+      setSecondsLeft(roundSeconds)
+    }
+
+    // Start the usage clock on a fresh round only. A reconnect continues the
+    // same round, and re-beginning would reset its duration and drop the tokens
+    // accumulated before the drop.
+    if (!resume && sessionIdRef.current) usageReporter.begin(sessionIdRef.current)
 
     if (!playbackRef.current) {
       const playback = createPlaybackQueue()
@@ -325,7 +353,7 @@ export function useInterview(): UseInterview {
     })
     sessionRef.current = session
     return session
-  }, [handleMessage])
+  }, [handleMessage, usageReporter])
 
   // Handles an unexpected socket close/error: either wrap up (if we're basically
   // done) or try to restore the session within the grace window.

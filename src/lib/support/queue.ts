@@ -10,7 +10,8 @@
 // its `lastSeenAt`. An active session whose heartbeat goes stale (closed tab,
 // dead network) has its slot reclaimed so the queue keeps moving.
 import { prisma } from '@/lib/prisma'
-import { MAX_ACTIVE_SESSIONS, HEARTBEAT_STALE_MS } from './prompt'
+import { HEARTBEAT_STALE_MS } from './prompt'
+import { getSetting } from '@/lib/admin/settings'
 
 // Arbitrary fixed key so every process locks the same advisory-lock slot.
 const ADVISORY_KEY = 918273645
@@ -27,6 +28,11 @@ export interface SlotResult {
  * Runs entirely inside one advisory-locked transaction.
  */
 export async function claimSlots(sessionId: string): Promise<SlotResult> {
+  // Resolved before the lock: getSetting reads through the global client, so it
+  // would run outside `tx` regardless, and holding the advisory lock across an
+  // extra round-trip would serialize every poller behind it.
+  const maxActive = await getSetting('lab.support.maxActiveSessions')
+
   return prisma.$transaction(async (tx) => {
     await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(${ADVISORY_KEY})`)
 
@@ -56,7 +62,7 @@ export async function claimSlots(sessionId: string): Promise<SlotResult> {
 
     // 3. Promote the oldest waiting sessions into any free slots.
     const activeCount = await tx.supportSession.count({ where: { status: 'active' } })
-    const free = MAX_ACTIVE_SESSIONS - activeCount
+    const free = maxActive - activeCount
     if (free > 0) {
       const waiting = await tx.supportSession.findMany({
         where: { status: 'waiting' },

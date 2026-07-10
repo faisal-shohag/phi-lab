@@ -1,8 +1,14 @@
 // Hive role helpers. The base app (better-auth) has no role concept, so Hive
 // adds a `role` column on User and seeds mentors lazily from the
 // HIVE_MENTOR_EMAILS env list — a matching email is promoted to MENTOR the
-// first time they touch Hive. Admin promotion is manual for now (v1 has no
-// admin UI).
+// first time they touch Hive. Roles are now also managed from /admin/users.
+//
+// getHiveUser() reads the User row on every call, which makes it the natural
+// place to enforce suspension: a suspended account resolves to null, so every
+// Hive and admin surface treats them as signed out. The lab token routes do the
+// equivalent check via isSuspended(), because they only call requireUser(),
+// which reads the session cookie and never touches the database.
+import { cache } from 'react'
 import { requireUser } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import type { Role } from '@/generated/prisma/client'
@@ -25,19 +31,25 @@ function mentorEmails(): Set<string> {
 }
 
 /**
- * The authenticated user plus their Hive role. Returns null when signed out.
- * Idempotently promotes a STUDENT to MENTOR when their email is in
+ * The authenticated user plus their Hive role. Returns null when signed out or
+ * suspended. Idempotently promotes a STUDENT to MENTOR when their email is in
  * HIVE_MENTOR_EMAILS (one UPDATE only when the role actually changes).
+ *
+ * Wrapped in React cache() so the Hive/admin layout and the page it renders
+ * share one DB lookup per request instead of each calling it separately.
  */
-export async function getHiveUser(): Promise<HiveUser | null> {
+export const getHiveUser = cache(async (): Promise<HiveUser | null> => {
   const authed = await requireUser()
   if (!authed) return null
 
   const row = await prisma.user.findUnique({
     where: { id: authed.id },
-    select: { id: true, name: true, email: true, image: true, role: true },
+    select: { id: true, name: true, email: true, image: true, role: true, suspendedAt: true },
   })
   if (!row) return null
+  // A suspended account keeps a structurally valid session cookie for up to 30
+  // days, so this DB read is the only thing standing between them and the app.
+  if (row.suspendedAt) return null
 
   if (row.role === 'STUDENT' && mentorEmails().has(row.email.toLowerCase())) {
     const updated = await prisma.user.update({
@@ -48,7 +60,7 @@ export async function getHiveUser(): Promise<HiveUser | null> {
     return updated
   }
   return row
-}
+})
 
 export function isMentor(user: HiveUser | null): boolean {
   return user?.role === 'MENTOR' || user?.role === 'ADMIN'

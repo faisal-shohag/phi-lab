@@ -4,6 +4,7 @@
 // can import it. Voice personas + languages are reused from the interview lab.
 
 import type { LanguageId } from '@/lib/interview/topics'
+import { spokenDuration } from '@/lib/labs/duration'
 
 export interface Concept {
   id: string
@@ -41,6 +42,8 @@ export interface TeachbackInstructionOptions {
   language?: LanguageId
   /** Persona name the student may use to introduce themselves. */
   personaName?: string
+  /** Round length in seconds, so the prompt's pacing matches the actual timer. */
+  roundSeconds?: number
 }
 
 /**
@@ -52,7 +55,7 @@ export function buildTeachbackInstruction(
   conceptId: string,
   opts: TeachbackInstructionOptions = {},
 ): string {
-  const { language = 'en', personaName } = opts
+  const { language = 'en', personaName, roundSeconds = ROUND_SECONDS } = opts
   const concept = conceptById(conceptId)
   const conceptLabel = concept?.label ?? conceptId
 
@@ -79,7 +82,7 @@ export function buildTeachbackInstruction(
 
   lines.push(
     '',
-    'The lesson lasts about 3 minutes. When you are told that time is up, briefly say in one or two sentences what you learned from the teacher, thank them, and stop asking questions.',
+    `The lesson lasts about ${spokenDuration(roundSeconds)}. When you are told that time is up, briefly say in one or two sentences what you learned from the teacher, thank them, and stop asking questions.`,
     'Begin only when prompted: greet the teacher warmly in one sentence as a curious learner and ask them to start explaining.',
   )
 

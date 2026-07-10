@@ -5,7 +5,8 @@ import { requireHiveUser } from '@/lib/hive/roles'
 import { hiveError } from '@/lib/hive/errors'
 import { coachDraft } from '@/lib/hive/ai'
 import { consumeDaily } from '@/lib/hive/rate-limit'
-import { DAILY_COACH_LIMIT, MAX_TITLE_LEN, MAX_BODY_LEN } from '@/lib/hive/constants'
+import { MAX_TITLE_LEN, MAX_BODY_LEN } from '@/lib/hive/constants'
+import { getSetting } from '@/lib/admin/settings'
 
 export const maxDuration = 30
 
@@ -26,7 +27,7 @@ export async function POST(request: Request) {
     return hiveError('VALIDATION', 'Write a bit more before asking for feedback.')
   }
 
-  if (!consumeDaily(`coach:${user.id}`, DAILY_COACH_LIMIT)) return hiveError('DAILY_LIMIT')
+  if (!consumeDaily(`coach:${user.id}`, await getSetting('hive.dailyCoachLimit'))) return hiveError('DAILY_LIMIT')
 
   try {
     const result = await coachDraft(title, body, { userId: user.id })

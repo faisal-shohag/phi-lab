@@ -41,6 +41,13 @@ model User {
   linkedinUrl   String?
   websiteUrl    String?
   profilePublic Boolean   @default(false)
+  // Suspension. Enforced at DB-read choke points (getHiveUser + the lab token
+  // routes), never from the session cookie: better-auth caches the session in a
+  // signed JWT for 30 days, so a cookie-only check would let a suspended user
+  // keep working until it refreshed.
+  suspendedAt     DateTime?
+  suspendedReason String?
+  suspendedById   String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   sessions      Session[]
@@ -60,6 +67,7 @@ model User {
   hiveNotifications HiveNotification[]
 
   @@unique([email])
+  @@index([suspendedAt])
   @@map("user")
 }
 
@@ -455,6 +463,21 @@ enum AiProvider {
   GROQ
 }
 
+/**
+ * Which product surface the call was made for. Orthogonal to AiTask: `feature`
+ * is *where* the work happened, `task` is *what job* the model did. Folding the
+ * labs into AiTask would make groupBy(['task']) mix Hive's TRIAGE with an
+ * interview round.
+ */
+enum AiFeature {
+  HIVE
+  INTERVIEW
+  FEYNMAN
+  ENGLISH
+  SUPPORT
+  ANALOGIES
+}
+
 /** Which job the model was doing. Cost and failure rates differ wildly per task. */
 enum AiTask {
   TRIAGE
@@ -463,6 +486,12 @@ enum AiTask {
   COACH
   KB_SUMMARY
   ENCOURAGEMENT
+  /** A live voice round. Tokens are client-reported — see tokensClientReported. */
+  LIVE_SESSION
+  /** Post-session grading via a one-shot structured generateContent. */
+  REPORT
+  /** Analogies: one-shot card generation. */
+  GENERATE
 }
 
 /** Coarse bucket for dashboards; `errorMessage` keeps the detail. */
@@ -480,6 +509,7 @@ enum AiErrorKind {
 
 model AiUsageEvent {
   id        String     @id @default(cuid())
+  feature   AiFeature  @default(HIVE) // the default backfills every pre-existing row correctly
   provider  AiProvider
   model     String
   task      AiTask
@@ -490,24 +520,40 @@ model AiUsageEvent {
   tryIndex  Int        @default(1)
 
   latencyMs      Int
+  /** Wall clock of a live voice round. Distinct from latencyMs, which is one call. */
+  durationMs     Int?
   promptTokens   Int?
   responseTokens Int?
   totalTokens    Int?
+  /** True when the browser reported the counts (live rounds). Treat as untrusted. */
+  tokensClientReported Boolean @default(false)
   /** The model's self-reported confidence on ANSWER calls. */
   confidence     Int?
 
   errorKind    AiErrorKind?
   errorMessage String?
 
-  postId String? // no FK — usage history outlives the post
-  userId String? // the student the work was for; null for cron-authored posts
+  postId    String? // no FK — usage history outlives the post
+  userId    String? // the student the work was for; null for cron-authored posts
+  sessionId String? // the lab session this belongs to; null for Hive
 
   createdAt DateTime @default(now())
+
+  // Idempotency for the client-reported live flush is a PARTIAL unique index,
+  // added by raw SQL in the migration (Prisma cannot express it):
+  //   CREATE UNIQUE INDEX ai_usage_live_once ON ai_usage_event (feature, session_id)
+  //     WHERE task = 'LIVE_SESSION' AND session_id IS NOT NULL;
+  // A plain @@unique([feature, sessionId]) would collide — interview writes both
+  // a LIVE_SESSION and a REPORT row for one session. And @@unique([feature, task,
+  // sessionId]) would block logging a failed report followed by a successful
+  // retry, which is exactly the failure data this table exists to show.
 
   @@index([createdAt])
   @@index([provider, createdAt])
   @@index([task, success, createdAt])
   @@index([success, errorKind, createdAt])
+  @@index([feature, createdAt])
+  @@index([feature, task, provider, createdAt])
   @@map("ai_usage_event")
 }
 
@@ -527,4 +573,36 @@ model HiveNotification {
 
   @@index([userId, readAt, createdAt])
   @@map("hive_notification")
+}
+
+// ── Admin ─────────────────────────────────────────────────────────────────
+// Key/JSON rather than a column per knob: the settings are heterogeneous and
+// keep growing (round time per lab, daily limit per lab, kill switch per lab,
+// park switch per provider). A column-per-knob table forces a migration for
+// every new toggle. Defaults and validation live in code
+// (src/lib/admin/settings-defaults.ts), so an empty table behaves as before.
+
+model AdminSetting {
+  key       String   @id // e.g. "lab.interview.roundSeconds"
+  value     Json
+  updatedAt DateTime @updatedAt
+  updatedBy String? // admin user id; no FK so the trail outlives the account
+
+  @@map("admin_setting")
+}
+
+/// Append-only. Role escalation with no trail is how platforms get owned.
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  actorId    String // the admin who did it
+  action     String // "user.role.set" | "user.suspend" | "setting.update" | ...
+  targetType String? // "user" | "setting" | "provider"
+  targetId   String?
+  before     Json?
+  after      Json?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+  @@map("admin_audit_log")
 }

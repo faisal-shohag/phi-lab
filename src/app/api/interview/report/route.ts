@@ -6,6 +6,8 @@ import { errorResponse } from '@/lib/interview/errors'
 import { prisma } from '@/lib/prisma'
 import { awardXp } from '@/lib/gamification/award'
 import { interviewXp } from '@/lib/gamification/reasons'
+import { recordAiUsage } from '@/lib/ai-usage/record'
+import { normalizeTokens } from '@/lib/ai-usage/tokens'
 
 // Generates the post-interview report from the transcript stored server-side.
 // Uses a standard (non-Live) text model so it can return structured JSON via a
@@ -134,6 +136,20 @@ export async function POST(request: Request) {
     .filter(Boolean)
     .join('\n')
 
+  // Telemetry context shared by the success and failure paths below. Both are
+  // recorded: a dashboard built only on successful calls shows a fleet that
+  // never has a bad day.
+  const startedAt = Date.now()
+  const usageBase = {
+    feature: 'INTERVIEW',
+    task: 'REPORT',
+    provider: 'GEMINI',
+    model: REPORT_MODEL,
+    tryIndex: 1,
+    sessionId,
+    userId: user.id,
+  } as const
+
   try {
     const ai = new GoogleGenAI({ apiKey })
     const response = await ai.models.generateContent({
@@ -144,11 +160,29 @@ export async function POST(request: Request) {
 
     const text = response.text
     if (!text) {
+      void recordAiUsage({
+        ...usageBase,
+        success: false,
+        latencyMs: Date.now() - startedAt,
+        tokens: normalizeTokens(response.usageMetadata),
+        errorKind: 'TRUNCATED',
+        errorMessage: 'the model returned an empty report',
+      })
       await prisma.interviewSession.update({ where: { id: sessionId }, data: { status: 'FAILED' } })
       return errorResponse('REPORT_FAILED', 'The model returned an empty report.')
     }
 
+    // Recorded only once the payload actually parses — a malformed body is an
+    // INVALID_JSON failure, and it falls to the catch below.
     const report = JSON.parse(text) as InterviewReport
+
+    void recordAiUsage({
+      ...usageBase,
+      success: true,
+      latencyMs: Date.now() - startedAt,
+      tokens: normalizeTokens(response.usageMetadata),
+    })
+
     await prisma.interviewSession.update({
       where: { id: sessionId },
       data: {
@@ -176,6 +210,13 @@ export async function POST(request: Request) {
     return Response.json(report)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
+    void recordAiUsage({
+      ...usageBase,
+      success: false,
+      latencyMs: Date.now() - startedAt,
+      errorKind: err instanceof SyntaxError ? 'INVALID_JSON' : 'UNKNOWN',
+      errorMessage: message,
+    })
     await prisma.interviewSession.update({ where: { id: sessionId }, data: { status: 'FAILED' } }).catch(() => {})
     return errorResponse('REPORT_FAILED', `Failed to generate report: ${message}`)
   }

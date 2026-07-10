@@ -22,9 +22,16 @@
 //               fence, so we ask for JSON and extract it. No rate-limit headers.
 import { extractJson, toJsonSchema, requireAllProperties } from './schema'
 import { recordAiUsage, type AiCallContext, type TokenUsage } from './usage'
+import { getSettings } from '@/lib/admin/settings'
 import type { AiErrorKind, AiProvider } from '@/generated/prisma/client'
 
 export type ProviderId = 'gemini' | 'ollama' | 'groq'
+
+/**
+ * Everything a usage row needs except `feature` — this module only ever serves
+ * Hive, so it stamps that itself rather than making every ai.ts caller repeat it.
+ */
+export type HiveCallContext = Omit<AiCallContext, 'feature'>
 
 /** ProviderId (internal, lowercase) → the Prisma enum stored on rows. */
 export const PROVIDER_ENUM: Record<ProviderId, AiProvider> = {
@@ -334,12 +341,33 @@ const PROVIDERS: Provider[] = [gemini, ollama, groq].sort((a, b) => a.priority -
 // instead of hammering whichever one is first.
 let rotation = 0
 
-/** Available providers, rotated so the same one doesn't always go first. */
-function attemptOrder(): Provider[] {
-  const available = PROVIDERS.filter(isAvailable)
+/**
+ * Available providers, rotated so the same one doesn't always go first.
+ *
+ * `adminParked` is the admin kill switch — distinct from the automatic
+ * rate-limit cooldown that `isAvailable` checks. An admin parks a provider
+ * because its bill or its output is wrong; the cooldown parks it because it
+ * said 429. Both remove it from rotation, and neither should resurrect it.
+ */
+function attemptOrder(adminParked: ReadonlySet<ProviderId>): Provider[] {
+  const available = PROVIDERS.filter((p) => isAvailable(p) && !adminParked.has(p.id))
   if (available.length <= 1) return available
   const start = rotation++ % available.length
   return [...available.slice(start), ...available.slice(0, start)]
+}
+
+/** The set of providers an admin has switched off. */
+async function adminParkedProviders(): Promise<ReadonlySet<ProviderId>> {
+  const parked = new Set<ProviderId>()
+  try {
+    const settings = await getSettings()
+    if (settings['flag.provider.gemini.parked']) parked.add('gemini')
+    if (settings['flag.provider.ollama.parked']) parked.add('ollama')
+    if (settings['flag.provider.groq.parked']) parked.add('groq')
+  } catch {
+    // A settings outage must not take the whole fleet offline. Park nothing.
+  }
+  return parked
 }
 
 export class AllProvidersFailed extends Error {
@@ -376,13 +404,14 @@ export interface GenerationResult<T> {
 export async function generateStructuredWithMeta<T>(
   prompt: string,
   geminiSchema: object,
-  ctx: AiCallContext,
+  ctx: HiveCallContext,
 ): Promise<GenerationResult<T>> {
   const attempts: { id: ProviderId; error: string }[] = []
-  const order = attemptOrder().slice(0, MAX_PROVIDER_ATTEMPTS)
+  const order = attemptOrder(await adminParkedProviders()).slice(0, MAX_PROVIDER_ATTEMPTS)
 
   if (order.length === 0) {
     void recordAiUsage({
+      feature: 'HIVE',
       ...ctx,
       provider: 'GEMINI', // no provider was reachable; the row records the gap
       model: 'none',
@@ -404,6 +433,7 @@ export async function generateStructuredWithMeta<T>(
       const parsed = JSON.parse(reply.text) as T
       healthOf(provider.id).lastError = null
       void recordAiUsage({
+        feature: 'HIVE',
         ...ctx,
         provider: PROVIDER_ENUM[provider.id],
         model: provider.model,
@@ -435,6 +465,7 @@ export async function generateStructuredWithMeta<T>(
       }
 
       void recordAiUsage({
+        feature: 'HIVE',
         ...ctx,
         provider: PROVIDER_ENUM[provider.id],
         model: provider.model,
@@ -461,7 +492,7 @@ export async function generateStructuredWithMeta<T>(
 export async function generateStructured<T>(
   prompt: string,
   geminiSchema: object,
-  ctx: AiCallContext,
+  ctx: HiveCallContext,
 ): Promise<T> {
   return (await generateStructuredWithMeta<T>(prompt, geminiSchema, ctx)).data
 }

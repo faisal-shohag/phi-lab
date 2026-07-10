@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
@@ -13,14 +14,15 @@ import { Logo } from '@/components/brand/logo'
 import { Button } from '@/components/ui/button'
 
 // Fetch a user only when their profile is public. Never selects email.
-async function loadPublicUser(id: string) {
+// cache() dedupes generateMetadata's and the page's calls into one query.
+const loadPublicUser = cache(async (id: string) => {
   const user = await prisma.user.findUnique({
     where: { id },
     select: { id: true, name: true, image: true, createdAt: true, profilePublic: true, headline: true },
   })
   if (!user || !user.profilePublic) return null
   return user
-}
+})
 
 export async function generateMetadata(
   { params }: { params: Promise<{ id: string }> },
