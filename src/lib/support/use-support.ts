@@ -49,6 +49,8 @@ export interface UseSupport {
   error: string | null
   errorCode: InterviewErrorCode | null
   secondsLeft: number
+  /** The full session length this session started with — admin-tunable, so the countdown ring needs it, not the SUPPORT_SECONDS constant. */
+  roundTotal: number
   transcript: TranscriptEntry[]
   muted: boolean
   agentSpeaking: boolean
@@ -83,6 +85,7 @@ export function useSupport(): UseSupport {
   const [error, setError] = useState<string | null>(null)
   const [errorCode, setErrorCode] = useState<InterviewErrorCode | null>(null)
   const [secondsLeft, setSecondsLeft] = useState(SUPPORT_SECONDS)
+  const [roundTotal, setRoundTotal] = useState(SUPPORT_SECONDS)
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([])
   const [muted, setMuted] = useState(false)
   const [agentSpeaking, setAgentSpeaking] = useState(false)
@@ -328,6 +331,7 @@ export function useSupport(): UseSupport {
     if (!resume && Number.isFinite(roundSeconds) && roundSeconds > 0) {
       secondsLeftRef.current = roundSeconds
       setSecondsLeft(roundSeconds)
+      setRoundTotal(roundSeconds)
     }
 
     // Start the usage clock on a fresh session only. A reconnect continues the
@@ -489,6 +493,7 @@ export function useSupport(): UseSupport {
     transcriptRef.current = []
     setSecondsLeft(SUPPORT_SECONDS)
     secondsLeftRef.current = SUPPORT_SECONDS
+    setRoundTotal(SUPPORT_SECONDS)
     setMuted(false)
     mutedRef.current = false
     wrappedUpRef.current = false
@@ -620,6 +625,7 @@ export function useSupport(): UseSupport {
     transcriptRef.current = []
     setSecondsLeft(SUPPORT_SECONDS)
     secondsLeftRef.current = SUPPORT_SECONDS
+    setRoundTotal(SUPPORT_SECONDS)
     setMuted(false)
     mutedRef.current = false
     setCategory(null)
@@ -637,6 +643,7 @@ export function useSupport(): UseSupport {
     error,
     errorCode,
     secondsLeft,
+    roundTotal,
     transcript,
     muted,
     agentSpeaking,

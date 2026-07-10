@@ -6,7 +6,7 @@ import { ArrowDown, Loader2, Mic, MicOff, PhoneOff, Wifi } from 'lucide-react'
 import { SpeakingOrb } from './speaking-orb'
 import { CountdownRing } from './countdown-ring'
 import { useAnalyserLevel } from './use-analyser-level'
-import { ROUND_SECONDS, topicById, levelById, type LevelId } from '@/lib/interview/topics'
+import { topicById, levelById, type LevelId } from '@/lib/interview/topics'
 import type { TranscriptEntry } from '@/lib/interview/use-interview'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -19,6 +19,7 @@ interface LiveScreenProps {
   topic: string | null
   level: LevelId | null
   secondsLeft: number
+  roundTotal: number
   transcript: TranscriptEntry[]
   muted: boolean
   modelSpeaking: boolean
@@ -32,7 +33,7 @@ interface LiveScreenProps {
 
 export function LiveScreen(props: LiveScreenProps) {
   const {
-    topic, level, secondsLeft, transcript, muted, modelSpeaking,
+    topic, level, secondsLeft, roundTotal, transcript, muted, modelSpeaking,
     micAnalyser, outputAnalyser, connecting, reconnecting, onMute, onEnd,
   } = props
 
@@ -120,7 +121,7 @@ export function LiveScreen(props: LiveScreenProps) {
           <p className="text-lg font-semibold">{statusText}</p>
         </div>
 
-        <CountdownRing secondsLeft={secondsLeft} total={ROUND_SECONDS} />
+        <CountdownRing secondsLeft={secondsLeft} total={roundTotal} />
 
         {/* Mic level waveform */}
         <div className="flex h-6 items-center gap-1">

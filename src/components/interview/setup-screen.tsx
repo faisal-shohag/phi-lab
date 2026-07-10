@@ -8,6 +8,7 @@ import {
   HeartHandshake, Briefcase, Gavel, Flame, type LucideIcon,
 } from 'lucide-react'
 import { TOPICS, LEVELS, PRESSURES, ROUND_SECONDS, type LevelId, type PressureId } from '@/lib/interview/topics'
+import { useRoundLength } from '@/lib/labs/use-round-length'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -30,6 +31,8 @@ export function SetupScreen({ onContinue, greeting }: SetupScreenProps) {
   const [topic, setTopic] = useState<string | null>(null)
   const [level, setLevel] = useState<LevelId>('medium')
   const [pressure, setPressure] = useState<PressureId>('neutral')
+  // Admin-tunable; ROUND_SECONDS is only the pre-fetch placeholder.
+  const roundSeconds = useRoundLength('interview', ROUND_SECONDS)
 
   const canContinue = !!topic
 
@@ -64,7 +67,7 @@ export function SetupScreen({ onContinue, greeting }: SetupScreenProps) {
         </h1>
         <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
           A voice conversation with an AI interviewer. Pick a topic and level, then talk it out for one{' '}
-          <span className="font-semibold text-foreground">{Math.round(ROUND_SECONDS / 60)}-minute</span> round.
+          <span className="font-semibold text-foreground">{Math.round(roundSeconds / 60)}-minute</span> round.
         </p>
       </motion.div>
 

@@ -64,6 +64,7 @@ export function SupportLab({ userName }: { userName?: string }) {
               <LiveScreen
                 category={s.category}
                 secondsLeft={s.secondsLeft}
+                roundTotal={s.roundTotal}
                 transcript={s.transcript}
                 muted={s.muted}
                 agentSpeaking={s.agentSpeaking}

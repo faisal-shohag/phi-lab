@@ -81,6 +81,7 @@ export function InterviewLab({ userName }: { userName?: string }) {
                 topic={iv.topic}
                 level={iv.level}
                 secondsLeft={iv.secondsLeft}
+                roundTotal={iv.roundTotal}
                 transcript={iv.transcript}
                 muted={iv.muted}
                 modelSpeaking={iv.modelSpeaking}

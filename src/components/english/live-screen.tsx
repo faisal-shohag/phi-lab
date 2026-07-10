@@ -6,7 +6,7 @@ import { ArrowDown, Loader2, Mic, MicOff, PhoneOff, Wifi } from 'lucide-react'
 import { SpeakingOrb } from '@/components/interview/speaking-orb'
 import { CountdownRing } from '@/components/interview/countdown-ring'
 import { useAnalyserLevel } from '@/components/interview/use-analyser-level'
-import { scenarioById, ROUND_SECONDS } from '@/lib/english/scenarios'
+import { scenarioById } from '@/lib/english/scenarios'
 import type { TranscriptEntry } from '@/lib/english/use-english'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,6 +17,7 @@ const BOTTOM_THRESHOLD = 48
 interface LiveScreenProps {
   scenario: string | null
   secondsLeft: number
+  roundTotal: number
   transcript: TranscriptEntry[]
   muted: boolean
   coachSpeaking: boolean
@@ -30,7 +31,7 @@ interface LiveScreenProps {
 
 export function LiveScreen(props: LiveScreenProps) {
   const {
-    scenario, secondsLeft, transcript, muted, coachSpeaking,
+    scenario, secondsLeft, roundTotal, transcript, muted, coachSpeaking,
     micAnalyser, outputAnalyser, connecting, reconnecting, onMute, onEnd,
   } = props
 
@@ -113,7 +114,7 @@ export function LiveScreen(props: LiveScreenProps) {
           <p className="text-lg font-semibold">{statusText}</p>
         </div>
 
-        <CountdownRing secondsLeft={secondsLeft} total={ROUND_SECONDS} />
+        <CountdownRing secondsLeft={secondsLeft} total={roundTotal} />
 
         <div className="flex h-6 items-center gap-1">
           {Array.from({ length: 9 }).map((_, i) => {

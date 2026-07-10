@@ -7,6 +7,7 @@ import {
   TrendingUp, Link2, Braces, GraduationCap, Clock, type LucideIcon,
 } from 'lucide-react'
 import { CONCEPTS, ROUND_SECONDS } from '@/lib/feynman/concepts'
+import { useRoundLength } from '@/lib/labs/use-round-length'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -22,6 +23,7 @@ interface SetupScreenProps {
 
 export function SetupScreen({ onContinue, greeting }: SetupScreenProps) {
   const [concept, setConcept] = useState<string | null>(null)
+  const roundSeconds = useRoundLength('feynman', ROUND_SECONDS)
   const canContinue = !!concept
 
   return (
@@ -44,7 +46,7 @@ export function SetupScreen({ onContinue, greeting }: SetupScreenProps) {
         </h1>
         <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
           Explain a concept out loud to a curious AI beginner. It asks the naive questions — you find the gaps in your own understanding. One{' '}
-          <span className="font-semibold text-foreground">{Math.round(ROUND_SECONDS / 60)}-minute</span> round.
+          <span className="font-semibold text-foreground">{Math.round(roundSeconds / 60)}-minute</span> round.
         </p>
       </motion.div>
 

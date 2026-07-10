@@ -48,6 +48,8 @@ export interface UseFeynman {
   error: string | null
   errorCode: InterviewErrorCode | null
   secondsLeft: number
+  /** The full round length this round started with — admin-tunable, so the countdown ring needs it, not the ROUND_SECONDS constant. */
+  roundTotal: number
   transcript: TranscriptEntry[]
   report: FeynmanReport | null
   muted: boolean
@@ -78,6 +80,7 @@ export function useFeynman(): UseFeynman {
   const [error, setError] = useState<string | null>(null)
   const [errorCode, setErrorCode] = useState<InterviewErrorCode | null>(null)
   const [secondsLeft, setSecondsLeft] = useState(ROUND_SECONDS)
+  const [roundTotal, setRoundTotal] = useState(ROUND_SECONDS)
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([])
   const [report, setReport] = useState<FeynmanReport | null>(null)
   const [muted, setMuted] = useState(false)
@@ -316,6 +319,7 @@ export function useFeynman(): UseFeynman {
     if (!resume && Number.isFinite(roundSeconds) && roundSeconds > 0) {
       secondsLeftRef.current = roundSeconds
       setSecondsLeft(roundSeconds)
+      setRoundTotal(roundSeconds)
     }
 
     // Start the usage clock on a fresh round only. A reconnect continues the
@@ -408,6 +412,7 @@ export function useFeynman(): UseFeynman {
     transcriptRef.current = []
     setSecondsLeft(ROUND_SECONDS)
     secondsLeftRef.current = ROUND_SECONDS
+    setRoundTotal(ROUND_SECONDS)
     setMuted(false)
     mutedRef.current = false
     wrappedUpRef.current = false
@@ -492,6 +497,7 @@ export function useFeynman(): UseFeynman {
     transcriptRef.current = []
     setSecondsLeft(ROUND_SECONDS)
     secondsLeftRef.current = ROUND_SECONDS
+    setRoundTotal(ROUND_SECONDS)
     setMuted(false)
     mutedRef.current = false
   }, [teardown, setPhase])
@@ -503,6 +509,7 @@ export function useFeynman(): UseFeynman {
     error,
     errorCode,
     secondsLeft,
+    roundTotal,
     transcript,
     report,
     muted,

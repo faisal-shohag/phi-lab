@@ -6,7 +6,7 @@ import { ArrowDown, Loader2, Mic, MicOff, PhoneOff, Wifi } from 'lucide-react'
 import { SpeakingOrb } from '@/components/interview/speaking-orb'
 import { CountdownRing } from '@/components/interview/countdown-ring'
 import { useAnalyserLevel } from '@/components/interview/use-analyser-level'
-import { conceptById, ROUND_SECONDS } from '@/lib/feynman/concepts'
+import { conceptById } from '@/lib/feynman/concepts'
 import type { TranscriptEntry } from '@/lib/feynman/use-feynman'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,6 +17,7 @@ const BOTTOM_THRESHOLD = 48
 interface LiveScreenProps {
   concept: string | null
   secondsLeft: number
+  roundTotal: number
   transcript: TranscriptEntry[]
   muted: boolean
   studentSpeaking: boolean
@@ -30,7 +31,7 @@ interface LiveScreenProps {
 
 export function LiveScreen(props: LiveScreenProps) {
   const {
-    concept, secondsLeft, transcript, muted, studentSpeaking,
+    concept, secondsLeft, roundTotal, transcript, muted, studentSpeaking,
     micAnalyser, outputAnalyser, connecting, reconnecting, onMute, onEnd,
   } = props
 
@@ -116,7 +117,7 @@ export function LiveScreen(props: LiveScreenProps) {
           <p className="text-lg font-semibold">{statusText}</p>
         </div>
 
-        <CountdownRing secondsLeft={secondsLeft} total={ROUND_SECONDS} />
+        <CountdownRing secondsLeft={secondsLeft} total={roundTotal} />
 
         <div className="flex h-6 items-center gap-1">
           {Array.from({ length: 9 }).map((_, i) => {

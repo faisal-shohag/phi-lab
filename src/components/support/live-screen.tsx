@@ -6,7 +6,7 @@ import { ArrowDown, Loader2, Mic, MicOff, PhoneOff, Wifi, MonitorUp, MonitorX, S
 import { SpeakingOrb } from '@/components/interview/speaking-orb'
 import { CountdownRing } from '@/components/interview/countdown-ring'
 import { useAnalyserLevel } from '@/components/interview/use-analyser-level'
-import { supportCategoryById, SUPPORT_SECONDS } from '@/lib/support/prompt'
+import { supportCategoryById } from '@/lib/support/prompt'
 import type { TranscriptEntry } from '@/lib/support/use-support'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,6 +17,7 @@ const BOTTOM_THRESHOLD = 48
 interface LiveScreenProps {
   category: string | null
   secondsLeft: number
+  roundTotal: number
   transcript: TranscriptEntry[]
   muted: boolean
   agentSpeaking: boolean
@@ -33,7 +34,7 @@ interface LiveScreenProps {
 
 export function LiveScreen(props: LiveScreenProps) {
   const {
-    category, secondsLeft, transcript, muted, agentSpeaking, sharing,
+    category, secondsLeft, roundTotal, transcript, muted, agentSpeaking, sharing,
     micAnalyser, outputAnalyser, connecting, reconnecting, onMute, onToggleShare, onSendText, onEnd,
   } = props
 
@@ -130,7 +131,7 @@ export function LiveScreen(props: LiveScreenProps) {
           <p className="text-lg font-semibold">{statusText}</p>
         </div>
 
-        <CountdownRing secondsLeft={secondsLeft} total={SUPPORT_SECONDS} />
+        <CountdownRing secondsLeft={secondsLeft} total={roundTotal} />
 
         <div className="flex h-6 items-center gap-1">
           {Array.from({ length: 9 }).map((_, i) => {

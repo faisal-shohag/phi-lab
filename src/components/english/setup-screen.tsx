@@ -6,6 +6,7 @@ import {
   Code2, Users, HandCoins, MessagesSquare, Coffee, Languages, Clock, type LucideIcon,
 } from 'lucide-react'
 import { SCENARIOS, ROUND_SECONDS } from '@/lib/english/scenarios'
+import { useRoundLength } from '@/lib/labs/use-round-length'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -20,6 +21,7 @@ interface SetupScreenProps {
 
 export function SetupScreen({ onContinue, greeting }: SetupScreenProps) {
   const [scenario, setScenario] = useState<string | null>(null)
+  const roundSeconds = useRoundLength('english', ROUND_SECONDS)
   const canContinue = !!scenario
 
   return (
@@ -42,7 +44,7 @@ export function SetupScreen({ onContinue, greeting }: SetupScreenProps) {
         </h1>
         <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
           Practise speaking technical English with an AI partner. Pick a real work situation and talk it through for one{' '}
-          <span className="font-semibold text-foreground">{Math.round(ROUND_SECONDS / 60)}-minute</span> round.
+          <span className="font-semibold text-foreground">{Math.round(roundSeconds / 60)}-minute</span> round.
         </p>
       </motion.div>
 

@@ -6,6 +6,7 @@ import {
   Bug, HeartHandshake, Compass, MessageCircle, LifeBuoy, Clock, Loader2, type LucideIcon,
 } from 'lucide-react'
 import { SUPPORT_CATEGORIES, SUPPORT_LANGUAGES, supportCategoryById, SUPPORT_SECONDS } from '@/lib/support/prompt'
+import { useRoundLength } from '@/lib/labs/use-round-length'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -25,6 +26,7 @@ export function SetupScreen({ onSubmit, greeting, submitting }: SetupScreenProps
   const [category, setCategory] = useState<string | null>(null)
   const [problem, setProblem] = useState('')
   const [language, setLanguage] = useState('en')
+  const roundSeconds = useRoundLength('support', SUPPORT_SECONDS)
 
   const cat = supportCategoryById(category ?? '')
   const canSubmit = !!category && problem.trim().length >= MIN_LEN && !submitting
@@ -49,7 +51,7 @@ export function SetupScreen({ onSubmit, greeting, submitting }: SetupScreenProps
         </h1>
         <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
           A live voice chat with a supportive AI — about a bug, something on your mind, or where to go next.
-          Sessions last up to <span className="font-semibold text-foreground">{Math.round(SUPPORT_SECONDS / 60)} minutes</span>.
+          Sessions last up to <span className="font-semibold text-foreground">{Math.round(roundSeconds / 60)} minutes</span>.
         </p>
       </motion.div>
 

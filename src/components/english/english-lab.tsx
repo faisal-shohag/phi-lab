@@ -64,6 +64,7 @@ export function EnglishLab({ userName }: { userName?: string }) {
               <LiveScreen
                 scenario={en.scenario}
                 secondsLeft={en.secondsLeft}
+                roundTotal={en.roundTotal}
                 transcript={en.transcript}
                 muted={en.muted}
                 coachSpeaking={en.coachSpeaking}

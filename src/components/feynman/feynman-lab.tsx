@@ -64,6 +64,7 @@ export function FeynmanLab({ userName }: { userName?: string }) {
               <LiveScreen
                 concept={fx.concept}
                 secondsLeft={fx.secondsLeft}
+                roundTotal={fx.roundTotal}
                 transcript={fx.transcript}
                 muted={fx.muted}
                 studentSpeaking={fx.studentSpeaking}
