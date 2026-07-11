@@ -33,7 +33,10 @@ export interface ActiveChallenge {
 }
 
 export interface SubmitResult {
-  status: 'won' | 'lost' | 'active'
+  status: 'won' | 'lost' | 'active' | 'rescue'
+  // Present when a Blitz round can be rescued: 'time' (clock out → resume +5min
+  // & +1 life) or 'life' (tries out, clock running → buy +1 life).
+  rescuable?: 'time' | 'life'
   passed: number
   total: number
   xpDelta: number

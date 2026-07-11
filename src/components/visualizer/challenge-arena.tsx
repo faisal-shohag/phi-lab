@@ -21,6 +21,9 @@ interface Props {
   onHint: () => void
   onSubmit: () => void
   onGiveUp: () => void
+  // Fired once when a timed clock reaches zero — lets the page offer a rescue
+  // (the Submit button is disabled at that point, so the buzzer needs its own path).
+  onTimeUp?: () => void
 }
 
 function fmt(ms: number): string {
@@ -30,7 +33,7 @@ function fmt(ms: number): string {
 
 const HOLD_MS = 450 // press-and-hold duration to fire a submit
 
-export function ChallengeArena({ challenge, busy, lastResult, hint, hintBusy, hintUsed, calm, sound, onHint, onSubmit, onGiveUp }: Props) {
+export function ChallengeArena({ challenge, busy, lastResult, hint, hintBusy, hintUsed, calm, sound, onHint, onSubmit, onGiveUp, onTimeUp }: Props) {
   const [remaining, setRemaining] = useState<number | null>(null)
   const juice = useArenaJuice(calm)
 
@@ -57,6 +60,18 @@ export function ChallengeArena({ challenge, busy, lastResult, hint, hintBusy, hi
 
   const timeUp = remaining !== null && remaining <= 0
   const capped = challenge.maxAttempts < 9999
+
+  // Buzzer: fire onTimeUp once when the clock hits zero (resets if time is added
+  // back via a resume, so a fresh timeout can fire again).
+  const firedTimeUp = useRef(false)
+  useEffect(() => {
+    if (timeUp && !firedTimeUp.current && !busy) {
+      firedTimeUp.current = true
+      onTimeUp?.()
+    } else if (!timeUp) {
+      firedTimeUp.current = false
+    }
+  }, [timeUp, busy, onTimeUp])
   const triesLeft = capped ? challenge.maxAttempts - challenge.attemptsUsed : null
 
   // Detect a just-lost try to shatter its pip + play a crack.

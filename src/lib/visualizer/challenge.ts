@@ -10,6 +10,13 @@ export type Mode = 'oneshot' | 'retries' | 'timed'
 // Flat XP cost for one helper-AI use (Step Tutor / Story / Complexity / Harder-one).
 export const AI_CHARGE = 30
 
+// Blitz (timed) rescues — both unlimited, flat price.
+//  - Out of TIME: "Resume" tops the clock back up AND grants a life.
+//  - Out of TRIES (clock still running): buy a single extra life.
+export const RESUME_TIME_COST = 20
+export const RESUME_LIFE_COST = 100
+export const RESUME_TIME_MS = 5 * 60_000
+
 export const DIFFICULTY: Record<Difficulty, { stake: number; label: string }> = {
   easy: { stake: 20, label: 'Easy' },
   medium: { stake: 50, label: 'Medium' },

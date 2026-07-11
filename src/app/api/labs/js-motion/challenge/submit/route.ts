@@ -36,11 +36,11 @@ export async function POST(request: Request) {
   const mode = attempt.mode as Mode
   const now = Date.now()
 
-  // Timed mode: a lapsed clock is an immediate loss, no matter the submission.
+  // Timed mode: a lapsed clock stops grading — but the round is NOT lost yet.
+  // The learner can pay to Resume (+5min & +1 life) or Give up. Keep it active.
   if (attempt.expiresAt && now > attempt.expiresAt.getTime()) {
-    await prisma.challengeAttempt.update({ where: { id: attempt.id }, data: { status: 'lost' } })
     const me = await prisma.user.findUnique({ where: { id: user.id }, select: { xp: true } })
-    return Response.json({ status: 'lost', reason: 'timeout', passed: 0, total: (attempt.tests as unknown as HiddenTest[]).length, xpDelta: 0, balance: me?.xp ?? 0 })
+    return Response.json({ status: 'rescue', rescuable: 'time', reason: 'timeout', passed: 0, total: (attempt.tests as unknown as HiddenTest[]).length, xpDelta: 0, balance: me?.xp ?? 0 })
   }
 
   const tests = attempt.tests as unknown as HiddenTest[]
@@ -101,6 +101,24 @@ export async function POST(request: Request) {
 
   // Miss — decide whether the round is over.
   const outOfTries = attemptsUsed >= attempt.maxAttempts
+
+  // Timed players who exhaust their tries (with clock still running) aren't lost:
+  // they can buy a single extra life. Persist the used attempt, stay active.
+  if (mode === 'timed' && outOfTries) {
+    await prisma.challengeAttempt.update({ where: { id: attempt.id }, data: { attemptsUsed } })
+    const me = await prisma.user.findUnique({ where: { id: user.id }, select: { xp: true } })
+    return Response.json({
+      status: 'rescue',
+      rescuable: 'life',
+      passed: result.passed,
+      total: result.total,
+      xpDelta: 0,
+      remainingAttempts: 0,
+      expiresAt: attempt.expiresAt,
+      balance: me?.xp ?? 0,
+    })
+  }
+
   const finalLoss = mode === 'oneshot' || outOfTries
   await prisma.challengeAttempt.update({
     where: { id: attempt.id },

@@ -21,7 +21,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { interpret, RuntimeError } from '@/lib/visualizer/interpreter'
-import { playStepSound, playFinishSound, unlockAudio } from '@/lib/visualizer/sound'
+import { playStepSound, playFinishSound, unlockAudio, playGoSting } from '@/lib/visualizer/sound'
 import { authClient } from '@/lib/auth-client'
 import { AiTutor, type TutorLang, type TutorRequest } from '@/components/visualizer/ai-tutor'
 import { AiInsights } from '@/components/visualizer/ai-insights'
@@ -98,6 +98,7 @@ import { award as awardXp, useXp, refreshXp } from '@/lib/gamification/use-xp'
 import { ChallengeSetup, type ActiveChallenge, type SubmitResult } from '@/components/visualizer/challenge-setup'
 import { ChallengeArena } from '@/components/visualizer/challenge-arena'
 import { ChallengeResult } from '@/components/visualizer/challenge-result'
+import { ChallengeRescue } from '@/components/visualizer/challenge-rescue'
 import { ArenaEntry, StakeBurn } from '@/components/visualizer/arena-fx'
 import { LeaderboardDialog } from '@/components/visualizer/leaderboard-dialog'
 import { AiChargeDialog } from '@/components/visualizer/ai-charge-dialog'
@@ -611,6 +612,8 @@ export default function Home() {
   const [challengeEntering, setChallengeEntering] = useState(false)
   // Weekly rank captured on entry, so a win can announce a rank-up (C4).
   const prevRankRef = useRef<number | null>(null)
+  // A Blitz rescue prompt: 'time' (clock out) or 'life' (tries out). null = none.
+  const [rescue, setRescue] = useState<{ kind: 'time' | 'life' } | null>(null)
   const challengeActive = challengePhase === 'arena'
   const hasRealCode = code.replace(/\/\/.*$/gm, '').trim().length > 0
 
@@ -691,11 +694,12 @@ export default function Home() {
 
   const openChallenge = useCallback(() => {
     setChallengeResult(null)
+    setRescue(null)
     // Smart default: base it on the editor's code when there is real code, else topics.
     setChallengeSource(code.replace(/\/\/.*$/gm, '').trim() ? 'code' : 'topics')
     setChallengePhase('setup')
   }, [code])
-  const closeChallenge = useCallback(() => { setChallengePhase('off'); setChallenge(null); setChallengeResult(null) }, [])
+  const closeChallenge = useCallback(() => { setChallengePhase('off'); setChallenge(null); setChallengeResult(null); setRescue(null) }, [])
 
   const activateChallenge = useCallback(async () => {
     setChallengeBusy(true)
@@ -742,6 +746,13 @@ export default function Home() {
       const data = (await res.json()) as SubmitResult & { message?: string }
       if (!res.ok) { toast.error(data?.message || 'Submit failed'); return }
       void refreshXp()
+      // Blitz rescue — clock out (buy time) or tries out (buy a life). Offer the
+      // purchase instead of a loss; the round stays live server-side.
+      if (data.status === 'rescue' && data.rescuable) {
+        if (data.rescuable === 'life') setChallenge((c) => (c ? { ...c, attemptsUsed: c.maxAttempts } : c))
+        setRescue({ kind: data.rescuable })
+        return
+      }
       setChallengeResult(data)
       // Win celebration (flash / confetti / count-up) is staged inside
       // ChallengeResult so it's synced with the overlay.
@@ -778,6 +789,7 @@ export default function Home() {
       })
       const data = await res.json()
       void refreshXp()
+      setRescue(null)
       setChallengeResult({ status: 'lost', passed: 0, total: 0, xpDelta: 0, balance: data?.balance ?? userXp, reason: 'giveup' })
     } catch {
       toast.error('Could not give up')
@@ -785,6 +797,39 @@ export default function Home() {
       setChallengeBusy(false)
     }
   }, [challenge, userXp])
+
+  // Buy a Blitz rescue (extend the clock, or a fresh life) and stay in the round.
+  const resumeChallenge = useCallback(async () => {
+    if (!challenge || !rescue) return
+    setChallengeBusy(true)
+    try {
+      const res = await fetch('/api/labs/js-motion/challenge/resume', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ attemptId: challenge.attemptId, kind: rescue.kind }),
+      })
+      const data = await res.json()
+      void refreshXp()
+      if (!res.ok) {
+        // If the clock ran out while deciding on a life, fall back to a time resume.
+        if (data?.error === 'EXPIRED') { setRescue({ kind: 'time' }); return }
+        toast.error(data?.message || 'Could not resume')
+        return
+      }
+      setChallenge((c) => (c ? {
+        ...c,
+        expiresAt: data.expiresAt ?? c.expiresAt,
+        maxAttempts: data.maxAttempts ?? c.maxAttempts,
+        attemptsUsed: data.attemptsUsed ?? c.attemptsUsed,
+      } : c))
+      setRescue(null)
+      setChallengeResult(null)
+      if (settings.ambientSound) playGoSting()
+    } catch {
+      toast.error('Could not resume')
+    } finally {
+      setChallengeBusy(false)
+    }
+  }, [challenge, rescue, settings.ambientSound])
 
   const toggleBreakpoint = useCallback((line: number) => {
     setBreakpoints((prev) => {
@@ -1155,6 +1200,16 @@ export default function Home() {
           onExit={closeChallenge}
         />
       )}
+      {rescue && !challengeResult && (
+        <ChallengeRescue
+          kind={rescue.kind}
+          xp={userXp}
+          busy={challengeBusy}
+          calm={settings.calmMode}
+          onBuy={resumeChallenge}
+          onDecline={giveUpChallenge}
+        />
+      )}
       <LeaderboardDialog open={leaderboardOpen} onOpenChange={setLeaderboardOpen} />
       <AiChargeDialog
         open={aiChargeOpen}
@@ -1310,6 +1365,7 @@ export default function Home() {
                 onHint={buyHint}
                 onSubmit={submitChallenge}
                 onGiveUp={giveUpChallenge}
+                onTimeUp={rescue ? undefined : submitChallenge}
               />
             ) : (
             <aside className="h-full flex flex-col min-h-0 rounded-xl border-2 border-border bg-card overflow-hidden">
