@@ -38,11 +38,15 @@ export async function POST() {
   const paid = await spendXp({ userId: user.id, reason: 'viz_challenge_hint', sourceId: attempt.id, amount: HINT_COST })
   if (!paid.spent) return fail('INSUFFICIENT_XP', `You need ${HINT_COST} XP for a hint.`, 400)
 
+  const langLine = attempt.lang === 'english'
+    ? 'Give the hint in clear, simple English.'
+    : 'Give the hint in Bengali (Bangla script, বাংলা) — proper Bengali, not Banglish.'
   const prompt = [
     'You are a coding tutor. A beginner is stuck on this challenge:',
     attempt.prompt,
     `They must implement the function ${attempt.fnName}. Example: ${attempt.fnName}(${JSON.stringify(attempt.sampleInput).slice(1, -1)}) → ${attempt.sampleOutput}.`,
-    'Give ONE short hint in Bengali (Bangla script) that nudges their thinking — a strategy, an edge case to consider, or which construct to reach for. Do NOT write code, do NOT give the full approach, do NOT state the answer.',
+    'Give ONE short hint that nudges their thinking — a strategy, an edge case to consider, or which construct to reach for. Do NOT write code, do NOT give the full approach, do NOT state the answer.',
+    langLine,
   ].join('\n')
 
   try {

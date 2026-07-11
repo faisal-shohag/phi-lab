@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Trophy, Loader2, Crown } from 'lucide-react'
+import { motion } from 'framer-motion'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
@@ -46,8 +47,41 @@ export function LeaderboardDialog({ open, onOpenChange }: { open: boolean; onOpe
           </div>
         ) : (
           <>
+            {/* Podium — top 3 on gold/silver/bronze columns. */}
+            {data.rows.length >= 3 && (() => {
+              const [first, second, third] = data.rows
+              const order = [
+                { r: second, place: 1, h: 'h-14', col: 'from-slate-300 to-slate-400', medal: '🥈' },
+                { r: first, place: 0, h: 'h-20', col: 'from-amber-300 to-amber-500', medal: '🥇' },
+                { r: third, place: 2, h: 'h-10', col: 'from-orange-400 to-orange-600', medal: '🥉' },
+              ]
+              return (
+                <div className="mb-3 flex items-end justify-center gap-2 rounded-xl bg-linear-to-b from-amber-500/5 to-transparent px-2 pt-3">
+                  {order.map(({ r, place, h, col, medal }, idx) => (
+                    <motion.div
+                      key={r.userId}
+                      initial={{ y: 24, opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      transition={{ delay: 0.06 * idx, type: 'spring', stiffness: 280, damping: 20 }}
+                      className="flex w-1/3 flex-col items-center gap-1"
+                    >
+                      <span className="text-lg">{medal}</span>
+                      <Avatar className={cn('border-2', place === 0 ? 'h-11 w-11 border-amber-400' : 'h-9 w-9 border-transparent')}>
+                        {r.image && <AvatarImage src={r.image} alt={r.name} referrerPolicy="no-referrer" />}
+                        <AvatarFallback className="bg-linear-to-br from-rose-500 to-orange-600 text-[11px] font-semibold text-white">{r.name.slice(0, 2).toUpperCase()}</AvatarFallback>
+                      </Avatar>
+                      <span className="max-w-full truncate text-[11px] font-semibold">{r.name}</span>
+                      <span className="font-mono text-[11px] font-bold text-emerald-600 dark:text-emerald-400">{r.xp}</span>
+                      <div className={cn('w-full rounded-t-md bg-linear-to-b', h, col, r.userId === data.meId && 'ring-2 ring-amber-400')} />
+                    </motion.div>
+                  ))}
+                </div>
+              )
+            })()}
             <ol className="space-y-1">
-              {data.rows.map((r, i) => (
+              {(data.rows.length >= 3 ? data.rows.slice(3) : data.rows).map((r, idx) => {
+                const i = data.rows.length >= 3 ? idx + 3 : idx
+                return (
                 <li
                   key={r.userId}
                   className={cn(
@@ -66,7 +100,8 @@ export function LeaderboardDialog({ open, onOpenChange }: { open: boolean; onOpe
                   {i === 0 && <Crown className="h-4 w-4 text-amber-500" />}
                   <span className="font-mono text-sm font-bold text-emerald-600 dark:text-emerald-400">{r.xp}</span>
                 </li>
-              ))}
+                )
+              })}
             </ol>
             <div className="mt-1 border-t pt-2 text-center text-xs text-muted-foreground">
               {data.you.rank

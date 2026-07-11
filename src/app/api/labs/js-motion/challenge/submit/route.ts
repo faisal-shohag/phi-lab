@@ -49,10 +49,13 @@ export async function POST(request: Request) {
 
   // Win.
   if (result.allPass) {
+    const remainingMs = attempt.expiresAt ? Math.max(0, attempt.expiresAt.getTime() - now) : 0
     const remainingFrac =
       attempt.expiresAt && MODE[mode].timerMs
-        ? Math.max(0, (attempt.expiresAt.getTime() - now) / MODE[mode].timerMs!)
+        ? Math.max(0, remainingMs / MODE[mode].timerMs!)
         : 0
+    // Clutch: a timed win with the clock nearly out — earns a bonus "moment".
+    const clutch = mode === 'timed' && remainingMs > 0 && remainingMs < 15_000
     // Streak = consecutive wins ending with this one. Count finished rounds
     // newest-first, stop at the first loss. +1 for the win we're about to record.
     const recent = await prisma.challengeAttempt.findMany({
@@ -87,6 +90,7 @@ export async function POST(request: Request) {
       xpDelta: xp,
       winStreak: streak,
       multiplier,
+      clutch,
       referenceSolution: attempt.referenceSolution,
       balance: award.totalXp,
       newBadges: award.newBadges,

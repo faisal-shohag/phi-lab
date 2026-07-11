@@ -1,4 +1,6 @@
 import { aiUsageSummary } from '@/lib/admin/ai-usage'
+import { providerLimits } from '@/lib/admin/provider-limits'
+import { dailyCaps } from '@/lib/admin/daily-caps'
 import { compactNumber, duration, fullNumber, percent, relativeTime } from '@/lib/admin/format'
 import { UsageTrendChart } from '@/components/admin/usage-trend-chart'
 import { RangePicker } from '@/components/admin/range-picker'
@@ -22,7 +24,11 @@ export default async function AiUsagePage({
 }) {
   // searchParams is async in this Next version.
   const days = parseDays((await searchParams).days)
-  const usage = await aiUsageSummary(days)
+  const [usage, limits, caps] = await Promise.all([
+    aiUsageSummary(days),
+    providerLimits(),
+    dailyCaps(),
+  ])
 
   return (
     <>
@@ -185,6 +191,119 @@ export default async function AiUsagePage({
                     <TableCell className="text-right tabular-nums">{fullNumber(m.calls)}</TableCell>
                     <TableCell className="text-right tabular-nums">
                       {compactNumber(m.totalTokens)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              Provider limits
+              <Tooltip>
+                <TooltipTrigger>
+                  <Info className="text-muted-foreground size-3.5" />
+                </TooltipTrigger>
+                <TooltipContent className="max-w-72">
+                  Live rate-limit state, not windowed by the range above. Only Groq reports a
+                  remaining-requests count; Gemini and Ollama send no such header. Every value is
+                  last-observed — it moves only when a provider is called or rate limited.
+                </TooltipContent>
+              </Tooltip>
+            </CardTitle>
+            <CardDescription>Vendor quotas for the Hive failover fleet.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Provider</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Remaining</TableHead>
+                    <TableHead className="text-right">Updated</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {limits.map((p) => (
+                    <TableRow key={p.provider}>
+                      <TableCell className="font-medium capitalize">{p.provider}</TableCell>
+                      <TableCell>
+                        {!p.configured ? (
+                          <span className="text-muted-foreground">Not configured</span>
+                        ) : p.parked ? (
+                          <Badge variant="destructive" className="font-normal">
+                            parked (admin)
+                          </Badge>
+                        ) : p.cooldownMsLeft > 0 ? (
+                          <Badge variant="destructive" className="font-normal">
+                            cooling down · {duration(p.cooldownMsLeft)}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="font-normal">
+                            available
+                          </Badge>
+                        )}
+                        {p.lastError ? (
+                          <span className="text-muted-foreground ml-2 text-xs">{p.lastError}</span>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {p.reportsRemaining
+                          ? p.remaining !== null
+                            ? fullNumber(p.remaining)
+                            : '—'
+                          : 'n/a'}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-right whitespace-nowrap text-xs">
+                        {p.updatedAt ? relativeTime(p.updatedAt) : 'never'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              Daily caps
+              <Tooltip>
+                <TooltipTrigger>
+                  <Info className="text-muted-foreground size-3.5" />
+                </TooltipTrigger>
+                <TooltipContent className="max-w-72">
+                  Caps are per user per UTC day, set in Settings. &quot;Today&quot; is sessions started
+                  across all users since 00:00 UTC. Hive coach is throttled by an in-memory
+                  per-instance bucket, so it has no reliable platform count.
+                </TooltipContent>
+              </Tooltip>
+            </CardTitle>
+            <CardDescription>Per-user daily limits and today&apos;s platform load.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Feature</TableHead>
+                  <TableHead className="text-right">Cap / user / day</TableHead>
+                  <TableHead className="text-right">Today (all users)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {caps.map((c) => (
+                  <TableRow key={c.feature}>
+                    <TableCell className="font-medium">{c.feature}</TableCell>
+                    <TableCell className="text-right tabular-nums">{fullNumber(c.cap)}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {c.usedToday !== null ? fullNumber(c.usedToday) : '—'}
                     </TableCell>
                   </TableRow>
                 ))}

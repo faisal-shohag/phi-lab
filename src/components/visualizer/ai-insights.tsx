@@ -13,8 +13,8 @@ type Kind = 'story' | 'complexity' | 'challenge'
 
 interface AiInsightsProps {
   code: string
+  // The lab-wide language (bengali | english).
   lang: TutorLang
-  onLangChange: (lang: TutorLang) => void
   locked?: boolean
   // Load a generated challenge program into the editor and run it.
   onUseChallenge: (code: string) => void
@@ -28,7 +28,7 @@ const META: Record<Kind, { label: string; icon: typeof BookOpen; title: string }
   challenge: { label: 'Harder one', icon: Dumbbell, title: 'A harder program to load & trace (no stakes)' },
 }
 
-export function AiInsights({ code, lang, onLangChange, locked, onUseChallenge, onBeforeAi }: AiInsightsProps) {
+export function AiInsights({ code, lang, locked, onUseChallenge, onBeforeAi }: AiInsightsProps) {
   return (
     <div className="flex items-center gap-1.5">
       <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground pl-1">AI</span>
@@ -38,7 +38,6 @@ export function AiInsights({ code, lang, onLangChange, locked, onUseChallenge, o
           kind={k}
           code={code}
           lang={lang}
-          onLangChange={onLangChange}
           locked={locked}
           onUseChallenge={onUseChallenge}
           onBeforeAi={onBeforeAi}
@@ -58,7 +57,7 @@ interface Result {
   code?: string
 }
 
-function InsightAction({ kind, code, lang, onLangChange, locked, onUseChallenge, onBeforeAi }: AiInsightsProps & { kind: Kind }) {
+function InsightAction({ kind, code, lang, locked, onUseChallenge, onBeforeAi }: AiInsightsProps & { kind: Kind }) {
   const { label, icon: Icon, title } = META[kind]
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -114,16 +113,6 @@ function InsightAction({ kind, code, lang, onLangChange, locked, onUseChallenge,
     [locked, code, data, run, lang],
   )
 
-  const switchLang = useCallback(
-    (next: TutorLang) => {
-      if (next === lang) return
-      onLangChange(next)
-      setData(null)
-      void run(next)
-    },
-    [lang, onLangChange, run],
-  )
-
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
@@ -148,17 +137,6 @@ function InsightAction({ kind, code, lang, onLangChange, locked, onUseChallenge,
             <div className="flex items-center gap-2 border-b bg-muted/50 px-3 py-2">
               <Icon className="h-4 w-4 text-violet-500" />
               <span className="text-sm font-semibold">{label}</span>
-              <div className="ml-auto flex items-center gap-0.5 rounded-full bg-background p-0.5 text-[10px] font-semibold">
-                {(['banglish', 'english'] as TutorLang[]).map((l) => (
-                  <button
-                    key={l}
-                    onClick={() => switchLang(l)}
-                    className={cn('rounded-full px-2 py-0.5 capitalize transition-colors', lang === l ? 'bg-violet-500 text-white' : 'text-muted-foreground hover:text-foreground')}
-                  >
-                    {l === 'english' ? 'english' : 'বাংলা'}
-                  </button>
-                ))}
-              </div>
             </div>
             <div className="min-h-24 p-3 text-sm">
               <AnimatePresence mode="wait" initial={false}>

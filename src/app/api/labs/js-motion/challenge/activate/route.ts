@@ -15,6 +15,7 @@ import {
   DIFFICULTY, MODE, isDifficulty, isMode, isTopic, topicLabel, computeExpected, runFn,
   type Difficulty, type Mode, type ChallengeSource, type ChallengeTopic,
 } from '@/lib/visualizer/challenge'
+import { isLabLang, type LabLang } from '@/lib/visualizer/lang'
 
 export const runtime = 'nodejs'
 
@@ -27,7 +28,7 @@ const SCHEMA = {
   properties: {
     fnName: { type: Type.STRING, description: 'The function name the learner must implement, e.g. "solve".' },
     signature: { type: Type.STRING, description: 'The call signature, e.g. "solve(nums)".' },
-    prompt: { type: Type.STRING, description: 'The task, in Bengali (Bangla script). Say clearly what the function takes and returns. Keep code identifiers in English.' },
+    prompt: { type: Type.STRING, description: 'The task description. Say clearly what the function takes and returns. Keep code identifiers in English. Write it in the language requested in the prompt.' },
     sampleArgsJson: { type: Type.STRING, description: 'A JSON array of the arguments for ONE visible example call, e.g. "[5]" or "[[3,1,2]]".' },
     testArgsJson: {
       type: Type.ARRAY,
@@ -71,6 +72,7 @@ export async function POST(request: Request) {
 
   let difficulty: Difficulty = 'easy'
   let mode: Mode = 'oneshot'
+  let lang: LabLang = 'bengali'
   let code = ''
   let source: ChallengeSource = 'code'
   let topics: ChallengeTopic[] = []
@@ -78,6 +80,7 @@ export async function POST(request: Request) {
     const body = await request.json()
     if (isDifficulty(body?.difficulty)) difficulty = body.difficulty
     if (isMode(body?.mode)) mode = body.mode
+    if (isLabLang(body?.lang)) lang = body.lang
     if (typeof body?.code === 'string') code = body.code.slice(0, 4000)
     if (body?.source === 'topics') source = 'topics'
     if (Array.isArray(body?.topics)) {
@@ -111,6 +114,9 @@ export async function POST(request: Request) {
     `Difficulty: ${DIFFICULTY[difficulty].label}. ${DIFF_GUIDE[difficulty]}`,
     'Design a single function the learner must implement. Give a clear Bengali task description, one visible sample input, 5-7 hidden test inputs (include edge cases), and a correct reference solution.',
     'Constraints on the reference solution AND anything you expect the learner to write: only variables, functions, if/else, loops (for/while/for-of/for-in), switch, arrays, objects, classes, Map, Set, destructuring, template literals, and console.log. NO import/require, DOM, fetch, or regular expressions. Must terminate quickly. The function must RETURN its result (not console.log it), and the return must be JSON-serializable.',
+    lang === 'english'
+      ? 'Write the "prompt" task description in clear, simple English.'
+      : 'Write the "prompt" task description ENTIRELY in Bengali (Bangla script, বাংলা) — proper Bengali, NOT Banglish/Latin. Keep code identifiers in English.',
   ].join('\n')
 
   // Generate, then verify the reference actually runs for every test input.
@@ -147,6 +153,7 @@ export async function POST(request: Request) {
       userId: user.id,
       difficulty,
       mode,
+      lang,
       stake,
       status: 'active',
       fnName: gen.fnName,
@@ -168,10 +175,21 @@ export async function POST(request: Request) {
     return fail('INSUFFICIENT_XP', 'Not enough XP to stake this challenge.', 400)
   }
 
+  // Current win streak entering this round — consecutive prior wins, newest-first.
+  const recent = await prisma.challengeAttempt.findMany({
+    where: { userId: user.id, status: { in: ['won', 'lost'] } },
+    orderBy: { createdAt: 'desc' },
+    select: { status: true },
+    take: 20,
+  })
+  let currentStreak = 0
+  for (const r of recent) { if (r.status === 'won') currentStreak++; else break }
+
   return Response.json({
     attemptId: created.id,
     difficulty,
     mode,
+    lang,
     stake,
     fnName: gen.fnName,
     signature: gen.signature,
@@ -179,6 +197,7 @@ export async function POST(request: Request) {
     sample: { input: sampleArgs, output: sampleOutput },
     maxAttempts: created.maxAttempts,
     attemptsUsed: 0,
+    currentStreak,
     expiresAt: created.expiresAt,
     balance: staked.balance,
   })

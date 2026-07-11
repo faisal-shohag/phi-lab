@@ -22,6 +22,7 @@
 //               fence, so we ask for JSON and extract it. No rate-limit headers.
 import { extractJson, toJsonSchema, requireAllProperties } from './schema'
 import { recordAiUsage, type AiCallContext, type TokenUsage } from './usage'
+import { prisma } from '@/lib/prisma'
 import { getSettings } from '@/lib/admin/settings'
 import type { AiErrorKind, AiFeature, AiProvider } from '@/generated/prisma/client'
 
@@ -124,10 +125,41 @@ function park(id: ProviderId, ms: number, reason: string): void {
   const h = healthOf(id)
   h.cooldownUntil = Math.max(h.cooldownUntil, Date.now() + ms)
   h.lastError = reason
+  persistHealth(id)
+}
+
+/**
+ * Mirror this provider's current health into `provider_health` for the admin
+ * dashboard, which runs in a different instance and can't see the in-memory Map.
+ * Best-effort and fire-and-forget, exactly like recordAiUsage: a telemetry write
+ * must never fail a generation or hold up the caller.
+ */
+function persistHealth(id: ProviderId): void {
+  const h = healthOf(id)
+  const cooldownUntil = h.cooldownUntil > Date.now() ? new Date(h.cooldownUntil) : null
+  void prisma.providerHealth
+    .upsert({
+      where: { provider: PROVIDER_ENUM[id] },
+      create: {
+        provider: PROVIDER_ENUM[id],
+        remaining: h.remaining,
+        cooldownUntil,
+        lastError: h.lastError,
+      },
+      update: { remaining: h.remaining, cooldownUntil, lastError: h.lastError },
+    })
+    .catch(() => {})
 }
 
 function isAvailable(p: Provider): boolean {
   return Boolean(p.apiKey()) && healthOf(p.id).cooldownUntil <= Date.now()
+}
+
+/** Which providers have an API key configured. Env logic stays in one place. */
+export function providerConfigured(): Record<ProviderId, boolean> {
+  const out = {} as Record<ProviderId, boolean>
+  for (const p of PROVIDERS) out[p.id] = Boolean(p.apiKey())
+  return out
 }
 
 /** Snapshot for logging/debugging. */
@@ -170,7 +202,9 @@ function recordRateLimit(id: ProviderId, res: Response): void {
     h.remaining = Number(remaining)
     if (h.remaining <= 0) {
       const reset = parseDuration(res.headers.get('x-ratelimit-reset-requests')) ?? DEFAULT_COOLDOWN_MS
-      park(id, reset, 'request quota exhausted')
+      park(id, reset, 'request quota exhausted') // park() already persists
+    } else {
+      persistHealth(id)
     }
   }
 }

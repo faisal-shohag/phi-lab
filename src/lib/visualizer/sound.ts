@@ -106,3 +106,109 @@ export function playFinishSound(): void {
   tone(NOTES.e, t + 0.09, 0.28, 0.045)
   tone(NOTES.cHigh, t + 0.18, 0.4, 0.05)
 }
+
+// ── Arena sounds ───────────────────────────────────────────────────────────
+// Punchier than the calm learn-mode set: these are the "moments" of Challenge
+// Mode. Still procedural, still bounded gain. Fired from FX components which
+// already gate on reduced-motion / calm mode, so no extra guard here.
+
+// One low thump per countdown number (3 · 2 · 1).
+export function playCountdownBeat(): void {
+  const ac = audio()
+  if (!ac) return
+  const t = ac.currentTime
+  tone(NOTES.cLow, t, 0.18, 0.06, 'triangle')
+  tone(NOTES.c, t, 0.1, 0.03, 'sine')
+}
+
+// The "GO!" — a bright rising sting.
+export function playGoSting(): void {
+  const ac = audio()
+  if (!ac) return
+  const t = ac.currentTime
+  tone(NOTES.g, t, 0.14, 0.06, 'sawtooth')
+  tone(NOTES.cHigh, t + 0.06, 0.24, 0.06, 'sawtooth')
+  tone(NOTES.cHigh * 1.5, t + 0.12, 0.3, 0.05, 'triangle')
+}
+
+// Triumphant fanfare on a win.
+export function playVictoryFanfare(): void {
+  const ac = audio()
+  if (!ac) return
+  const t = ac.currentTime
+  tone(NOTES.c, t, 0.18, 0.06)
+  tone(NOTES.e, t + 0.1, 0.18, 0.06)
+  tone(NOTES.g, t + 0.2, 0.2, 0.06)
+  tone(NOTES.cHigh, t + 0.32, 0.5, 0.07, 'triangle')
+}
+
+// A soft, low descending thud on a loss — never harsh.
+export function playDefeatThud(): void {
+  const ac = audio()
+  if (!ac) return
+  const t = ac.currentTime
+  tone(NOTES.g / 2, t, 0.3, 0.05, 'sine')
+  tone(NOTES.cLow, t + 0.12, 0.4, 0.045, 'sine')
+}
+
+// A brittle crack when a "try" pip shatters after a failed submit.
+export function playShatter(): void {
+  const ac = audio()
+  if (!ac) return
+  const t = ac.currentTime
+  tone(NOTES.cHigh * 1.5, t, 0.06, 0.05, 'square')
+  tone(NOTES.a, t + 0.03, 0.08, 0.035, 'square')
+}
+
+// A quick coin blip — used to tick the XP counter up on a win.
+export function playCoin(): void {
+  const ac = audio()
+  if (!ac) return
+  const t = ac.currentTime
+  tone(NOTES.e, t, 0.05, 0.04, 'square')
+  tone(NOTES.cHigh, t + 0.03, 0.08, 0.04, 'square')
+}
+
+// A dry clock tick — one per second in the last 10 seconds of a timed round.
+// Very short and quiet so it reads as tension, not alarm.
+export function playTick(): void {
+  const ac = audio()
+  if (!ac) return
+  const t = ac.currentTime
+  tone(NOTES.gLow, t, 0.04, 0.03, 'square')
+}
+
+// A rising hum while the Submit button charges (hold-to-fire). `frac` 0..1 maps
+// to pitch so the pitch climbs as the ring fills. Call in short bursts.
+export function playCharge(frac: number): void {
+  const ac = audio()
+  if (!ac) return
+  const t = ac.currentTime
+  tone(NOTES.c * (1 + frac), t, 0.06, 0.025, 'triangle')
+}
+
+// A rising blip per passed test segment in the combo-bar reveal. `index` is the
+// segment position (0-based); pitch climbs step by step like a slot machine.
+export function playComboBlip(index: number): void {
+  const ac = audio()
+  if (!ac) return
+  const t = ac.currentTime
+  tone(C * Math.pow(2, index / 12), t, 0.08, 0.05, 'square')
+}
+
+// A soft chime as an XP mote lands on the balance badge.
+export function playMote(): void {
+  const ac = audio()
+  if (!ac) return
+  const t = ac.currentTime
+  tone(NOTES.cHigh, t, 0.06, 0.03, 'sine')
+}
+
+// A crisp click when selecting a difficulty/mode card in the setup screen.
+export function playSelect(): void {
+  const ac = audio()
+  if (!ac) return
+  const t = ac.currentTime
+  tone(NOTES.g, t, 0.04, 0.035, 'triangle')
+  tone(NOTES.cHigh, t + 0.02, 0.06, 0.03, 'sine')
+}

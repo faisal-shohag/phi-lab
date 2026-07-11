@@ -17,6 +17,7 @@ import { isSuspended } from '@/lib/admin/suspension'
 import { generateStructured } from '@/lib/hive/providers'
 import { errorResponse } from '@/lib/interview/errors'
 import { chargeAiUse, AI_CHARGE } from '@/lib/visualizer/ai-charge'
+import { isLabLang, aiLangInstruction, type LabLang } from '@/lib/visualizer/lang'
 
 export const runtime = 'nodejs'
 
@@ -24,7 +25,7 @@ function fail(code: string, message: string, status: number) {
   return Response.json({ error: code, message }, { status })
 }
 
-type Lang = 'banglish' | 'english'
+type Lang = LabLang
 type Mode = 'step' | 'error'
 
 interface ExplainReply {
@@ -49,13 +50,6 @@ const SCHEMA = {
   },
   required: ['explanation', 'tip'],
   propertyOrdering: ['explanation', 'tip'],
-}
-
-function langInstruction(lang: Lang): string {
-  if (lang === 'banglish') {
-    return 'Write in Banglish — natural spoken Bangla written in English (Latin) letters, the way a Programming Hero mentor talks (e.g. "ei line e number ta double hoye gelo"). Keep all code, keywords and variable names in English.'
-  }
-  return 'Write in clear, simple English a beginner can follow.'
 }
 
 // A tiny bounded cache. Keeping it small is fine: the win is "the learner
@@ -103,14 +97,14 @@ export async function POST(request: Request) {
   if (await isSuspended(user.id)) return errorResponse('SUSPENDED')
 
   let mode: Mode = 'step'
-  let lang: Lang = 'banglish'
+  let lang: Lang = 'bengali'
   let code = ''
   let step: StepContext | undefined
   let errorText = ''
   try {
     const body = await request.json()
     if (body?.mode === 'error') mode = 'error'
-    if (body?.lang === 'english') lang = 'english'
+    if (isLabLang(body?.lang)) lang = body.lang
     if (typeof body?.code === 'string') code = body.code.slice(0, 4000)
     if (body?.step && typeof body.step === 'object') {
       step = {
@@ -150,7 +144,7 @@ export async function POST(request: Request) {
           `They are on line ${step?.line ?? '?'}. The visualizer describes this step as: "${step?.description}" (kind: ${step?.kind}).`,
           step?.vars ? `Current variables: ${step.vars}.` : '',
           'Explain in 2-3 short sentences WHY this step does what it does. Be concrete about the values involved. Do not lecture; imagine you are sitting beside them.',
-          langInstruction(lang),
+          aiLangInstruction(lang),
         ]
           .filter(Boolean)
           .join('\n')
@@ -162,7 +156,7 @@ export async function POST(request: Request) {
           '```',
           `The error was: "${errorText}".`,
           'In 2-3 short sentences, explain in plain words what went wrong and why. Then, in the tip, give ONE gentle hint that points them toward the fix — do NOT write the corrected code for them.',
-          langInstruction(lang),
+          aiLangInstruction(lang),
         ].join('\n')
 
   try {

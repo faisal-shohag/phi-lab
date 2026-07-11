@@ -98,6 +98,7 @@ import { award as awardXp, useXp, refreshXp } from '@/lib/gamification/use-xp'
 import { ChallengeSetup, type ActiveChallenge, type SubmitResult } from '@/components/visualizer/challenge-setup'
 import { ChallengeArena } from '@/components/visualizer/challenge-arena'
 import { ChallengeResult } from '@/components/visualizer/challenge-result'
+import { ArenaEntry, StakeBurn } from '@/components/visualizer/arena-fx'
 import { LeaderboardDialog } from '@/components/visualizer/leaderboard-dialog'
 import { AiChargeDialog } from '@/components/visualizer/ai-charge-dialog'
 import { isTopic, type Difficulty, type Mode, type ChallengeSource, type ChallengeTopic } from '@/lib/visualizer/challenge'
@@ -191,15 +192,16 @@ export default function Home() {
   const { data: session, isPending: sessionPending } = authClient.useSession()
   const signedIn = Boolean(session?.user)
 
-  // AI-tutor language preference, remembered across sessions.
-  const [aiLang, setAiLang] = useState<TutorLang>('banglish')
+  // Lab-wide AI language, remembered across sessions. Drives every AI surface.
+  const [aiLang, setAiLang] = useState<TutorLang>('bengali')
   useEffect(() => {
     // Hydration-safe: localStorage is only read after mount so SSR and first
-    // client render agree.
+    // client render agree. Old 'banglish' preferences map to Bengali.
     /* eslint-disable react-hooks/set-state-in-effect */
     try {
       const saved = window.localStorage.getItem('phi-viz-ai-lang')
-      if (saved === 'banglish' || saved === 'english') setAiLang(saved)
+      if (saved === 'english') setAiLang('english')
+      else if (saved) setAiLang('bengali')
     } catch { /* ignore */ }
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [])
@@ -576,14 +578,17 @@ export default function Home() {
     runQuiet(BLANK_CODE)
   }
 
+  // A one-off ripple pulse into the editor on Run (E2), keyed to retrigger.
+  const [runPulse, setRunPulse] = useState(0)
   const handleRunClick = useCallback(() => {
     // Unlock the audio context inside this click so the first step's blip isn't
     // swallowed by the browser autoplay policy.
     if (settings.ambientSound) unlockAudio()
     // Daily practice XP — idempotent per calendar day on the server.
     if (signedIn) void awardXp('viz_daily', todayUTC())
+    if (!settings.calmMode) setRunPulse((n) => n + 1)
     runAndPlay(code)
-  }, [code, runAndPlay, settings.ambientSound, signedIn])
+  }, [code, runAndPlay, settings.ambientSound, settings.calmMode, signedIn])
 
   // Load an AI-generated challenge program into the editor and run it.
   const handleUseChallenge = useCallback((newCode: string) => {
@@ -602,6 +607,10 @@ export default function Home() {
   const [challengeMode, setChallengeMode] = useState<Mode>('oneshot')
   const [challengeSource, setChallengeSource] = useState<ChallengeSource>('code')
   const [challengeTopics, setChallengeTopics] = useState<ChallengeTopic[]>([])
+  // Arena entry FX (flame wipe + countdown) overlays the arena on activate.
+  const [challengeEntering, setChallengeEntering] = useState(false)
+  // Weekly rank captured on entry, so a win can announce a rank-up (C4).
+  const prevRankRef = useRef<number | null>(null)
   const challengeActive = challengePhase === 'arena'
   const hasRealCode = code.replace(/\/\/.*$/gm, '').trim().length > 0
 
@@ -671,11 +680,9 @@ export default function Home() {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (alive && d?.active) {
-          /* eslint-disable react-hooks/set-state-in-effect */
           setChallenge(d.active as ActiveChallenge)
           setChallengePhase('arena')
           setHintUsed((d.active.hintsUsed ?? 0) > 0)
-          /* eslint-enable react-hooks/set-state-in-effect */
         }
       })
       .catch(() => {})
@@ -695,13 +702,14 @@ export default function Home() {
     try {
       const res = await fetch('/api/labs/js-motion/challenge/activate', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ difficulty: challengeDifficulty, mode: challengeMode, source: challengeSource, topics: challengeTopics, code }),
+        body: JSON.stringify({ difficulty: challengeDifficulty, mode: challengeMode, lang: aiLang, source: challengeSource, topics: challengeTopics, code }),
       })
       const data = await res.json()
       if (!res.ok) { toast.error(data?.message || 'Could not start the challenge'); return }
       const ch = data as ActiveChallenge
       setChallenge(ch)
       setChallengePhase('arena')
+      setChallengeEntering(true) // play the flame-wipe + countdown once
       setChallengeResult(null)
       setChallengeHint(null)
       setHintUsed(false)
@@ -711,12 +719,17 @@ export default function Home() {
       setCode(stub)
       runQuiet(stub)
       void refreshXp()
+      // Baseline this week's rank so a win can announce a rank-up.
+      fetch('/api/labs/js-motion/leaderboard')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { prevRankRef.current = d?.you?.rank ?? null })
+        .catch(() => {})
     } catch {
       toast.error('Could not start the challenge')
     } finally {
       setChallengeBusy(false)
     }
-  }, [challengeDifficulty, challengeMode, challengeSource, challengeTopics, code, runQuiet])
+  }, [challengeDifficulty, challengeMode, challengeSource, challengeTopics, aiLang, code, runQuiet])
 
   const submitChallenge = useCallback(async () => {
     if (!challenge) return
@@ -730,12 +743,23 @@ export default function Home() {
       if (!res.ok) { toast.error(data?.message || 'Submit failed'); return }
       void refreshXp()
       setChallengeResult(data)
+      // Win celebration (flash / confetti / count-up) is staged inside
+      // ChallengeResult so it's synced with the overlay.
       if (data.status === 'active') {
         setChallenge((c) => (c ? { ...c, attemptsUsed: c.attemptsUsed + 1 } : c))
       } else if (data.status === 'won') {
-        if (typeof window === 'undefined' || !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-          confetti({ particleCount: 140, spread: 80, origin: { y: 0.6 }, startVelocity: 48 })
-        }
+        // Rank-up toast — announce only if the weekly rank actually improved.
+        fetch('/api/labs/js-motion/leaderboard')
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => {
+            const nr: number | null = d?.you?.rank ?? null
+            const pr = prevRankRef.current
+            prevRankRef.current = nr
+            if (nr && (pr === null || nr < pr)) {
+              setTimeout(() => toast.success(pr && pr !== nr ? `Rank up! #${pr} → #${nr} this week` : `You're #${nr} this week`, { icon: '🏆' }), 1500)
+            }
+          })
+          .catch(() => {})
       }
     } catch {
       toast.error('Submit failed')
@@ -859,7 +883,6 @@ export default function Home() {
                       getRequest={buildStepRequest}
                       resetKey={currentIndex}
                       lang={aiLang}
-                      onLangChange={changeAiLang}
                       locked={!signedIn}
                       variant="why"
                       onBeforeAi={requestAiCharge}
@@ -927,13 +950,20 @@ export default function Home() {
             <div
               key={tab.id}
               className={cn(
-                'group flex items-center gap-1 rounded-md pr-1 transition-colors whitespace-nowrap',
-                isActive ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                'group relative flex items-center gap-1 rounded-md pr-1 whitespace-nowrap',
+                isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground transition-colors',
               )}
             >
+              {isActive && (
+                <motion.span
+                  layoutId="jsm-tab-pill"
+                  transition={settings.calmMode ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 34 }}
+                  className="absolute inset-0 z-0 rounded-md bg-background shadow-sm"
+                />
+              )}
               <button
                 onClick={() => setView(tab.id)}
-                className="flex items-center gap-1.5 text-sm font-semibold px-2 py-1"
+                className="relative z-10 flex items-center gap-1.5 text-sm font-semibold px-2 py-1"
               >
                 <Icon className="h-4 w-4" /> {tab.label}
               </button>
@@ -941,7 +971,7 @@ export default function Home() {
                 <button
                   onClick={(e) => { e.stopPropagation(); setFeature(tab.key!, false) }}
                   title={`Close ${tab.label}`}
-                  className="rounded p-0.5 text-muted-foreground/60 hover:bg-muted hover:text-foreground"
+                  className="relative z-10 rounded p-0.5 text-muted-foreground/60 hover:bg-muted hover:text-foreground"
                 >
                   <XIcon className="h-3 w-3" />
                 </button>
@@ -1109,10 +1139,18 @@ export default function Home() {
         : 'bg-linear-to-br from-slate-50 via-white to-slate-100 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-950',
     )}>
       <Toaster position="top-center" />
+      {challengeEntering && (
+        <>
+          <ArenaEntry calm={settings.calmMode} sound={settings.ambientSound} onDone={() => setChallengeEntering(false)} />
+          {challenge && <StakeBurn stake={challenge.stake} calm={settings.calmMode} />}
+        </>
+      )}
       {challengeResult && challengeResult.status !== 'active' && (
         <ChallengeResult
           result={challengeResult}
           stake={challenge?.stake ?? 0}
+          calm={settings.calmMode}
+          sound={settings.ambientSound}
           onNew={() => { setChallengeResult(null); setChallenge(null); setChallengeHint(null); setHintUsed(false); setChallengePhase('setup') }}
           onExit={closeChallenge}
         />
@@ -1166,12 +1204,16 @@ export default function Home() {
               onToggle={setFeature}
               onReset={resetAll}
               enabledCount={enabledCount}
+              labLang={aiLang}
+              onLangChange={changeAiLang}
             />
             <AnimatedThemeToggler />
             {signedIn && (
               <>
                 <XpHint />
-                <XpBadge />
+                <span id="js-motion-xp-anchor" className="inline-flex">
+                  <XpBadge />
+                </span>
               </>
             )}
             <Button variant="secondary" className="hidden sm:flex rounded-full">
@@ -1240,6 +1282,8 @@ export default function Home() {
                 locked={!signedIn}
                 busy={challengeBusy}
                 hasCode={hasRealCode}
+                calm={settings.calmMode}
+                sound={settings.ambientSound}
                 difficulty={challengeDifficulty}
                 mode={challengeMode}
                 source={challengeSource}
@@ -1261,6 +1305,8 @@ export default function Home() {
                 hint={challengeHint}
                 hintBusy={hintBusy}
                 hintUsed={hintUsed}
+                calm={settings.calmMode}
+                sound={settings.ambientSound}
                 onHint={buyHint}
                 onSubmit={submitChallenge}
                 onGiveUp={giveUpChallenge}
@@ -1271,15 +1317,17 @@ export default function Home() {
                 <Lightbulb className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm font-semibold">Demo examples</span>
               </div>
-              <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+              <div className="flex-1 overflow-y-auto p-2 space-y-1.5" style={{ perspective: 700 }}>
                 {DEMO_EXAMPLES.map((ex) => (
-                  <button
+                  <motion.button
                     key={ex.id}
                     onClick={() => handleExampleClick(ex)}
+                    whileHover={settings.calmMode ? undefined : { y: -2, rotateX: 3, scale: 1.01 }}
+                    whileTap={settings.calmMode ? undefined : { scale: 0.99 }}
                     className={cn(
-                      'w-full text-left p-2.5 rounded-lg border-2 transition-all duration-150',
+                      'w-full text-left p-2.5 rounded-lg border-2 transition-colors duration-150',
                       activeExampleId === ex.id
-                        ? 'border-foreground bg-foreground text-background shadow-md'
+                        ? 'border-foreground bg-foreground text-background shadow-md ring-1 ring-foreground/20'
                         : 'border-border bg-card hover:border-foreground/30 hover:bg-accent',
                     )}
                   >
@@ -1290,7 +1338,7 @@ export default function Home() {
                     )}>
                       {ex.description}
                     </div>
-                  </button>
+                  </motion.button>
                 ))}
                 <div className="p-2.5 rounded-lg bg-muted/50 text-[11px] text-muted-foreground leading-relaxed mt-3">
                   <strong className="text-foreground">Tip:</strong> Pick a demo or press <strong>New</strong>. Click the gutter to set breakpoints. Use <strong>←/→</strong> to step, <strong>Space</strong> to play. Toggle <strong>Quiz</strong> to test yourself.
@@ -1307,8 +1355,27 @@ export default function Home() {
               <div className="flex-1 min-h-0">
                 <ResizablePanelGroup orientation="horizontal" className="h-full gap-3">
                   <ResizablePanel defaultSize={50} minSize={25} className="min-w-0">
-                    <section className="h-full rounded-xl border-2 border-border bg-card overflow-hidden shadow-sm flex flex-col min-h-0 relative">
-                      <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/50 shrink-0">
+                    <section className={cn('h-full rounded-xl border-2 bg-card overflow-hidden shadow-sm flex flex-col min-h-0 relative', challengeActive ? 'border-rose-500/60' : 'border-border')}>
+                      {/* B6 laser frame — a rotating conic border while in the arena.
+                          Masked to a thin ring so the editor stays visible + usable. */}
+                      {challengeActive && !settings.calmMode && (
+                        <div
+                          className="pointer-events-none absolute inset-0 z-20 overflow-hidden rounded-xl"
+                          style={{
+                            WebkitMask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+                            WebkitMaskComposite: 'xor',
+                            mask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+                            maskComposite: 'exclude',
+                            padding: 2,
+                          }}
+                        >
+                          <div
+                            className="absolute left-1/2 top-1/2 h-[220%] w-[220%] -translate-x-1/2 -translate-y-1/2 animate-arena-laser"
+                            style={{ background: 'conic-gradient(from 0deg, transparent 0deg, rgba(244,63,94,0.95) 35deg, transparent 80deg, transparent 190deg, rgba(251,146,60,0.8) 225deg, transparent 270deg)' }}
+                          />
+                        </div>
+                      )}
+                      <div className="relative z-30 flex items-center gap-2 px-3 py-2 border-b bg-muted/50 shrink-0">
                         <Code2 className="h-4 w-4 text-muted-foreground" />
                         <span className="text-sm font-semibold">Editor</span>
                         <span className="ml-auto text-[11px] text-muted-foreground">
@@ -1320,14 +1387,26 @@ export default function Home() {
                           <AiInsights
                             code={code}
                             lang={aiLang}
-                            onLangChange={changeAiLang}
                             locked={!signedIn}
                             onUseChallenge={handleUseChallenge}
                             onBeforeAi={requestAiCharge}
                           />
                         </div>
                       )}
-                      <div className="flex-1 min-h-0 overflow-hidden">
+                      <div className="relative flex-1 min-h-0 overflow-hidden">
+                        {/* E2 run ripple — a quick pulse into the editor on Run. */}
+                        <AnimatePresence>
+                          {runPulse > 0 && (
+                            <motion.span
+                              key={runPulse}
+                              initial={{ scale: 0, opacity: 0.5 }}
+                              animate={{ scale: 6, opacity: 0 }}
+                              exit={{ opacity: 0 }}
+                              transition={{ duration: 0.5, ease: 'easeOut' }}
+                              className="pointer-events-none absolute left-1/2 top-2 z-10 h-16 w-16 -translate-x-1/2 rounded-full bg-pink-500/25"
+                            />
+                          )}
+                        </AnimatePresence>
                         <CodeEditor
                           value={code}
                           onChange={handleCodeChange}
@@ -1359,7 +1438,6 @@ export default function Home() {
                                       getRequest={buildErrorRequest}
                                       resetKey={error}
                                       lang={aiLang}
-                                      onLangChange={changeAiLang}
                                       locked={!signedIn}
                                       variant="fix"
                                       onBeforeAi={requestAiCharge}

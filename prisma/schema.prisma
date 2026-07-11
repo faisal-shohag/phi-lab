@@ -82,6 +82,7 @@ model ChallengeAttempt {
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   difficulty   String    // easy | medium | hard
   mode         String    // oneshot | retries | timed
+  lang         String    @default("bengali") // bengali | english (prompt + hint language)
   stake        Int
   status       String    @default("active") // active | won | lost
   fnName       String
@@ -590,6 +591,24 @@ model AiUsageEvent {
   @@index([feature, createdAt])
   @@index([feature, task, provider, createdAt])
   @@map("ai_usage_event")
+}
+
+// Last-observed rate-limit health per AI provider, one row each. The live health
+// lives in an in-memory Map in src/lib/hive/providers.ts, which is per-serverless-
+// instance: the admin dashboard runs in an instance that never made an AI call,
+// so it can't read that Map. This table is the durable, cross-instance mirror the
+// dashboard reads. Written best-effort from park()/recordRateLimit(); never on the
+// hot path's critical section.
+model ProviderHealth {
+  provider      AiProvider @id
+  /** Requests left in the current window. Groq only — Gemini/Ollama send no header. */
+  remaining     Int?
+  /** When the parked provider frees up. Read side computes remaining ms from this. */
+  cooldownUntil DateTime?
+  lastError     String?
+  updatedAt     DateTime   @updatedAt
+
+  @@map("provider_health")
 }
 
 // type: 'reply' | 'bee_approved' | 'accepted' | 'escalated' | 'mentor_assigned'

@@ -10,8 +10,10 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
+import type { LabLang } from '@/lib/visualizer/lang'
 
-export type TutorLang = 'banglish' | 'english'
+// The lab-wide language now drives the tutor; the old per-popover toggle is gone.
+export type TutorLang = LabLang
 
 // The request body sent to /api/labs/js-motion/explain, built at click time so
 // it always reflects the step the learner is actually looking at.
@@ -27,8 +29,8 @@ interface AiTutorProps {
   getRequest: () => TutorRequest
   // Changes when the underlying step/error changes, so a stale answer is cleared.
   resetKey: string | number
+  // The lab-wide language (bengali | english).
   lang: TutorLang
-  onLangChange: (lang: TutorLang) => void
   // Guest (signed-out) users see a friendly upsell instead of the tutor.
   locked?: boolean
   variant?: 'why' | 'fix'
@@ -41,7 +43,7 @@ interface Answer {
   tip: string
 }
 
-export function AiTutor({ getRequest, resetKey, lang, onLangChange, locked, variant = 'why', onBeforeAi }: AiTutorProps) {
+export function AiTutor({ getRequest, resetKey, lang, locked, variant = 'why', onBeforeAi }: AiTutorProps) {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [answer, setAnswer] = useState<Answer | null>(null)
@@ -88,17 +90,8 @@ export function AiTutor({ getRequest, resetKey, lang, onLangChange, locked, vari
     [locked, resetKey, answer, fetchAnswer, lang],
   )
 
-  const switchLang = useCallback(
-    (next: TutorLang) => {
-      if (next === lang) return
-      onLangChange(next)
-      setAnswer(null)
-      void fetchAnswer(next)
-    },
-    [lang, onLangChange, fetchAnswer],
-  )
-
   const isFix = variant === 'fix'
+  const bnFont = lang === 'bengali' ? { fontFamily: 'var(--font-bengali)' } : undefined
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
@@ -126,20 +119,6 @@ export function AiTutor({ getRequest, resetKey, lang, onLangChange, locked, vari
             <div className="flex items-center gap-2 border-b bg-muted/50 px-3 py-2">
               <Sparkles className="h-4 w-4 text-violet-500" />
               <span className="text-sm font-semibold">AI Tutor</span>
-              <div className="ml-auto flex items-center gap-0.5 rounded-full bg-background p-0.5 text-[10px] font-semibold">
-                {(['banglish', 'english'] as TutorLang[]).map((l) => (
-                  <button
-                    key={l}
-                    onClick={() => switchLang(l)}
-                    className={cn(
-                      'rounded-full px-2 py-0.5 capitalize transition-colors',
-                      lang === l ? 'bg-violet-500 text-white' : 'text-muted-foreground hover:text-foreground',
-                    )}
-                  >
-                    {l}
-                  </button>
-                ))}
-              </div>
             </div>
             <div className="min-h-24 p-3 text-sm">
               <AnimatePresence mode="wait" initial={false}>
@@ -163,7 +142,7 @@ export function AiTutor({ getRequest, resetKey, lang, onLangChange, locked, vari
                     </button>
                   </motion.div>
                 ) : answer ? (
-                  <motion.div key={`ans-${lang}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-2">
+                  <motion.div key={`ans-${lang}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-2" style={bnFont}>
                     <p className="leading-relaxed text-foreground">{answer.explanation}</p>
                     {answer.tip && (
                       <p className={cn(

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Check, X, HelpCircle } from 'lucide-react'
+import { Check, X, HelpCircle, Flame } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { QuizQuestion } from '@/lib/visualizer/quiz'
 
@@ -36,7 +36,30 @@ export function QuizOverlay({ question, streak, onResolved }: QuizOverlayProps) 
           <HelpCircle className="h-5 w-5 text-amber-500" />
           <span className="font-semibold text-sm">Predict — line {question.line}</span>
           {streak > 0 && (
-            <span className="ml-auto text-xs font-bold text-amber-600 dark:text-amber-400">🔥 {streak} streak</span>
+            <span className="relative ml-auto flex items-center gap-1 text-xs font-bold text-amber-600 dark:text-amber-400">
+              <motion.span
+                className="relative inline-flex"
+                animate={
+                  answered && !correct
+                    ? { scale: [1, 1.3, 0], opacity: [1, 1, 0], filter: ['grayscale(0)', 'grayscale(1)', 'grayscale(1)'] }
+                    : { scale: [1, 1.15, 1] }
+                }
+                transition={answered && !correct ? { duration: 0.6 } : { duration: 1.4, repeat: Infinity }}
+                style={{ filter: streak >= 5 ? 'drop-shadow(0 0 6px rgba(251,146,60,0.8))' : streak >= 3 ? 'drop-shadow(0 0 4px rgba(251,146,60,0.6))' : undefined }}
+              >
+                <Flame className={cn('fill-current', streak >= 5 ? 'h-5 w-5 text-orange-500' : streak >= 3 ? 'h-4 w-4 text-amber-500' : 'h-3.5 w-3.5 text-amber-400')} />
+              </motion.span>
+              {/* Smoke puff when the streak breaks */}
+              {answered && !correct && (
+                <motion.span
+                  initial={{ opacity: 0, y: 0, scale: 0.5 }}
+                  animate={{ opacity: [0, 0.6, 0], y: -14, scale: 1.4 }}
+                  transition={{ duration: 0.7, delay: 0.2 }}
+                  className="pointer-events-none absolute left-1 top-0 h-2 w-2 rounded-full bg-muted-foreground/60 blur-[2px]"
+                />
+              )}
+              <span className={cn(answered && !correct && 'text-muted-foreground line-through')}>{streak} streak</span>
+            </span>
           )}
         </div>
         <p className="text-sm text-muted-foreground mb-4">{question.prompt}</p>

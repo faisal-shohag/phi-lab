@@ -16,6 +16,7 @@ import { isSuspended } from '@/lib/admin/suspension'
 import { generateStructured } from '@/lib/hive/providers'
 import { errorResponse } from '@/lib/interview/errors'
 import { chargeAiUse, AI_CHARGE } from '@/lib/visualizer/ai-charge'
+import { isLabLang, aiLangInstruction, type LabLang } from '@/lib/visualizer/lang'
 
 export const runtime = 'nodejs'
 
@@ -23,7 +24,7 @@ function fail(code: string, message: string, status: number) {
   return Response.json({ error: code, message }, { status })
 }
 
-type Lang = 'banglish' | 'english'
+type Lang = LabLang
 type Kind = 'story' | 'complexity' | 'challenge'
 
 const SCHEMAS: Record<Kind, object> = {
@@ -58,12 +59,6 @@ const SCHEMAS: Record<Kind, object> = {
   },
 }
 
-// The non-English option is real Bengali (Bangla script), not Banglish.
-function langLine(lang: Lang): string {
-  return lang === 'english'
-    ? 'Write the prose in clear, simple English.'
-    : 'Write the prose ENTIRELY in Bengali (Bangla script, বাংলা) — proper Bengali, NOT Banglish/Latin letters. Keep code identifiers, keywords and Big-O in English.'
-}
 
 // The interpreter is a teaching subset. Tell the challenge generator to stay
 // inside it so generated programs actually run.
@@ -90,12 +85,12 @@ export async function POST(request: Request) {
   if (await isSuspended(user.id)) return errorResponse('SUSPENDED')
 
   let kind: Kind = 'story'
-  let lang: Lang = 'banglish'
+  let lang: Lang = 'bengali'
   let code = ''
   try {
     const body = await request.json()
     if (body?.kind === 'complexity' || body?.kind === 'challenge') kind = body.kind
-    if (body?.lang === 'english') lang = 'english'
+    if (isLabLang(body?.lang)) lang = body.lang
     if (typeof body?.code === 'string') code = body.code.slice(0, 4000)
   } catch {
     return errorResponse('SERVER_ERROR', 'Invalid JSON body.')
@@ -117,20 +112,20 @@ export async function POST(request: Request) {
           'Read this JavaScript program and narrate, before they run it, what it is going to do — like telling a little story with an everyday metaphor (mangoes in a crate, students in a queue, etc.).',
           '```js', code, '```',
           '2-4 sentences. Do not restate the code line by line; capture the intent so they can picture it.',
-          langLine(lang),
+          aiLangInstruction(lang),
         ].join('\n')
       : kind === 'complexity'
         ? [
             'You are a CS teacher. Identify the main algorithm/pattern in this JavaScript program and its time complexity.',
             '```js', code, '```',
             'Give the name, the Big-O, and one beginner-friendly sentence on why. If there is no real algorithm, use name "—" and bigO "O(1)".',
-            langLine(lang),
+            aiLangInstruction(lang),
           ].join('\n')
         : [
             'You are a programming teacher. Based on this JavaScript program, write a NEW program that teaches the same idea but is one clear step harder — a good next exercise to trace step by step.',
             '```js', code, '```',
             CHALLENGE_RULES,
-            langLine(lang),
+            aiLangInstruction(lang),
           ].join('\n')
 
   try {

@@ -36,7 +36,7 @@ export default async function ChallengeSharePage({ params }: { params: Promise<{
         </div>
         <div className="mt-5 font-mono text-4xl font-black text-emerald-400">+{win.wonXp} XP</div>
         {win.winStreak > 1 && <div className="mt-1 text-sm font-bold text-rose-300">🔥 {win.winStreak}-win streak</div>}
-        <p className="mt-5 rounded-xl bg-white/5 p-3 text-sm leading-relaxed text-white/80" style={{ fontFamily: 'var(--font-bengali)' }}>
+        <p className="mt-5 rounded-xl bg-white/5 p-3 text-sm leading-relaxed text-white/80" style={win.lang === 'bengali' ? { fontFamily: 'var(--font-bengali)' } : undefined}>
           {win.prompt}
         </p>
         <Link

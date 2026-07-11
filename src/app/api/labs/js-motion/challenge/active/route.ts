@@ -24,11 +24,22 @@ export async function GET() {
     return Response.json({ active: null, expired: attempt.id })
   }
 
+  // Current win streak entering this round — consecutive prior wins, newest-first.
+  const recent = await prisma.challengeAttempt.findMany({
+    where: { userId: user.id, status: { in: ['won', 'lost'] } },
+    orderBy: { createdAt: 'desc' },
+    select: { status: true },
+    take: 20,
+  })
+  let currentStreak = 0
+  for (const r of recent) { if (r.status === 'won') currentStreak++; else break }
+
   return Response.json({
     active: {
       attemptId: attempt.id,
       difficulty: attempt.difficulty,
       mode: attempt.mode,
+      lang: attempt.lang,
       stake: attempt.stake,
       fnName: attempt.fnName,
       prompt: attempt.prompt,
@@ -36,6 +47,7 @@ export async function GET() {
       maxAttempts: attempt.maxAttempts,
       attemptsUsed: attempt.attemptsUsed,
       hintsUsed: attempt.hintsUsed,
+      currentStreak,
       expiresAt: attempt.expiresAt,
     },
   })

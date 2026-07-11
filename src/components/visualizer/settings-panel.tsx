@@ -15,17 +15,21 @@ import {
   type FeatureKey,
   type VisualizerSettings,
 } from '@/lib/visualizer/settings'
+import { LAB_LANGS, type LabLang } from '@/lib/visualizer/lang'
 
 interface SettingsPanelProps {
   settings: VisualizerSettings
   onToggle: (key: FeatureKey, value: boolean) => void
   onReset: () => void
   enabledCount: number
+  // Lab-wide AI language (drives tutor, insights, challenge, hints).
+  labLang: LabLang
+  onLangChange: (lang: LabLang) => void
 }
 
 const GROUPS: ('Understanding' | 'Concepts' | 'Comfort')[] = ['Understanding', 'Concepts', 'Comfort']
 
-export function SettingsPanel({ settings, onToggle, onReset, enabledCount }: SettingsPanelProps) {
+export function SettingsPanel({ settings, onToggle, onReset, enabledCount, labLang, onLangChange }: SettingsPanelProps) {
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -53,6 +57,26 @@ export function SettingsPanel({ settings, onToggle, onReset, enabledCount }: Set
           )}
         </div>
         <div className="max-h-[60vh] overflow-y-auto p-2 space-y-3">
+          <div>
+            <div className="px-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              AI language
+            </div>
+            <div className="flex items-center gap-1.5 rounded-lg border p-1">
+              {LAB_LANGS.map((l) => (
+                <button
+                  key={l.id}
+                  onClick={() => onLangChange(l.id)}
+                  className={cn(
+                    'flex-1 rounded-md px-2 py-1.5 text-sm font-semibold transition-colors font-bengali',
+                    labLang === l.id ? 'bg-amber-500 text-white' : 'text-muted-foreground hover:bg-accent',
+                  )}
+                >
+                  {l.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 px-1.5 text-[10px] text-muted-foreground">Sets the language for the AI tutor, insights, challenges & hints.</p>
+          </div>
           {GROUPS.map((group) => (
             <div key={group}>
               <div className="px-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
