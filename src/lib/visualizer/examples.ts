@@ -261,4 +261,71 @@ console.log(title + " v" + version);`,
   }
 }`,
   },
+  {
+    id: 'destructuring',
+    title: 'Destructuring & Swap',
+    description: 'Unpack arrays and objects, and swap two variables in one line.',
+    icon: 'shuffle',
+    code: `const user = { name: "Ayesha", age: 21 };
+const { name, age } = user;
+console.log(name + " is " + age);
+
+const [first, ...rest] = [10, 20, 30];
+console.log("first = " + first);
+console.log("rest = " + rest.join(", "));
+
+let a = 1, b = 2;
+[a, b] = [b, a];
+console.log("a = " + a + ", b = " + b);`,
+  },
+  {
+    id: 'classes',
+    title: 'Classes & Inheritance',
+    description: 'Build objects with a class, extend it, and call super.',
+    icon: 'shuffle',
+    code: `class Animal {
+  constructor(name) {
+    this.name = name;
+  }
+  speak() {
+    return this.name + " makes a sound";
+  }
+}
+
+class Dog extends Animal {
+  speak() {
+    return this.name + " barks";
+  }
+}
+
+const a = new Animal("Creature");
+const d = new Dog("Rex");
+console.log(a.speak());
+console.log(d.speak());`,
+  },
+  {
+    id: 'switch-methods',
+    title: 'Switch & Array Methods',
+    description: 'A switch statement plus map / filter / reduce on an array.',
+    icon: 'shuffle',
+    code: `const day = 3;
+switch (day) {
+  case 1:
+    console.log("Monday");
+    break;
+  case 3:
+    console.log("Wednesday");
+    break;
+  default:
+    console.log("Some other day");
+}
+
+const nums = [1, 2, 3, 4, 5];
+const doubled = nums.map(n => n * 2);
+const evens = nums.filter(n => n % 2 === 0);
+const total = nums.reduce((sum, n) => sum + n, 0);
+console.log("doubled: " + doubled.join(", "));
+console.log("evens: " + evens.join(", "));
+console.log("total: " + total);`,
+  },
 ]

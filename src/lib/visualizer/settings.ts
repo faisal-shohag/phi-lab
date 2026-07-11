@@ -19,6 +19,10 @@ export type FeatureKey =
   | 'heatTrail'
   | 'flameGraph'
   | 'aliasWires'
+  | 'aiTutor'
+  | 'calmMode'
+  | 'ambientSound'
+  | 'focusDim'
 
 export type VisualizerSettings = Record<FeatureKey, boolean>
 
@@ -37,6 +41,10 @@ export const DEFAULT_SETTINGS: VisualizerSettings = {
   heatTrail: false,
   flameGraph: false,
   aliasWires: false,
+  aiTutor: true,
+  calmMode: false,
+  ambientSound: false,
+  focusDim: false,
 }
 
 export interface FeatureMeta {
@@ -44,10 +52,16 @@ export interface FeatureMeta {
   label: string
   blurb: string
   // lucide icon name is resolved by the panel; keep this file React-free-ish.
-  group: 'Understanding' | 'Concepts'
+  group: 'Understanding' | 'Concepts' | 'Comfort'
 }
 
 export const FEATURE_META: FeatureMeta[] = [
+  {
+    key: 'aiTutor',
+    label: 'AI tutor',
+    blurb: 'Ask "why?" on any step, or "help me fix" on an error — a friendly explanation in Banglish or English. Needs sign-in.',
+    group: 'Understanding',
+  },
   {
     key: 'diffFlash',
     label: 'Change flash',
@@ -131,6 +145,24 @@ export const FEATURE_META: FeatureMeta[] = [
     label: 'Event loop',
     blurb: 'Visualize the call stack, Web APIs, and micro/macro task queues for async code.',
     group: 'Concepts',
+  },
+  {
+    key: 'calmMode',
+    label: 'Calm mode',
+    blurb: 'A gentler pace and softer motion — slower auto-play and no confetti bursts. Relax and watch.',
+    group: 'Comfort',
+  },
+  {
+    key: 'ambientSound',
+    label: 'Ambient sound',
+    blurb: 'Soft, procedural blips as each step runs — a quiet chime on output and when a function returns.',
+    group: 'Comfort',
+  },
+  {
+    key: 'focusDim',
+    label: 'Focus dimming',
+    blurb: 'While playing, dim every line except the one running now, so your eye rests on the active step.',
+    group: 'Comfort',
   },
 ]
 

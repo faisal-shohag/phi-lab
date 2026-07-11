@@ -1,6 +1,7 @@
 'use client'
 
-import { motion } from 'framer-motion'
+import { useEffect, useRef, useState } from 'react'
+import { animate, motion, useAnimationControls, useMotionValue, useReducedMotion } from 'framer-motion'
 import { cn } from '@/lib/utils'
 import type { HeapSnapshot, Primitive, ValueSnapshot } from '@/lib/visualizer/types'
 import { formatPrimitive, primitiveColor, resolveValue } from '@/lib/visualizer/values'
@@ -108,15 +109,51 @@ export function VariableCard({
   )
 }
 
+// Numbers count up/down from their previous value; other primitives just swap.
+// A changed value gives a little scale pop. Both are skipped under
+// prefers-reduced-motion. The component instance is stable (no `key` remount) so
+// the previous number survives across steps and the count-up has something to
+// animate from.
 function PrimitiveValue({ value, recentlyChanged }: { value: Primitive; recentlyChanged: boolean }) {
-  const display = formatPrimitive(value)
+  const reduce = useReducedMotion()
+  const isNumber = typeof value === 'number' && Number.isFinite(value)
+  const prevRef = useRef<Primitive>(value)
+  const mv = useMotionValue(isNumber ? (value as number) : 0)
+  const [display, setDisplay] = useState<string>(() => formatPrimitive(value))
+  const pop = useAnimationControls()
+
+  useEffect(() => {
+    const prev = prevRef.current
+    prevRef.current = value
+
+    // The scale pop, when the value actually changed this step.
+    if (recentlyChanged && !reduce) {
+      void pop.start({ scale: [1.16, 1] }, { duration: 0.42, ease: [0.22, 1, 0.36, 1] })
+    }
+
+    // Count-up only makes sense number → number with an actual delta.
+    if (!isNumber || reduce || typeof prev !== 'number' || prev === value) {
+      setDisplay(formatPrimitive(value))
+      if (isNumber) mv.set(value as number)
+      return
+    }
+    const isInt = Number.isInteger(value) && Number.isInteger(prev)
+    const controls = animate(mv, value as number, {
+      duration: 0.5,
+      ease: [0.22, 1, 0.36, 1],
+      onUpdate: (v) => setDisplay(isInt ? String(Math.round(v)) : v.toFixed(2)),
+      onComplete: () => setDisplay(formatPrimitive(value)),
+    })
+    return () => controls.stop()
+    // recentlyChanged intentionally omitted: value is the trigger; the pop reads
+    // the latest recentlyChanged without needing to re-run on its own.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, isNumber, reduce, mv, pop])
+
   return (
     <motion.div
-      key={display}
-      initial={recentlyChanged ? { scale: 1.15, color: 'rgb(245 158 11)' } : false}
-      animate={{ scale: 1, color: undefined }}
-      transition={{ type: 'spring', stiffness: 280, damping: 22, duration: 0.4 }}
-      className={cn('font-mono text-sm font-semibold', primitiveColor(value))}
+      animate={pop}
+      className={cn('font-mono text-sm font-semibold tabular-nums', primitiveColor(value))}
     >
       {display}
     </motion.div>

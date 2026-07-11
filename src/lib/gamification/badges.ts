@@ -22,6 +22,13 @@ export interface BadgeStats {
   hiveApproved: number
   hiveAccepted: number
   hiveQueenWeeks: number
+  /** JS Motion: distinct days practiced, best consecutive-day streak, concepts done. */
+  vizDaysPracticed: number
+  bestVizStreak: number
+  conceptsCompleted: string[]
+  /** Challenge Mode: total staked-challenge wins, and a Hard one-shot win. */
+  challengeWins: number
+  wonHardOneshot: boolean
 }
 
 export interface BadgeDef {
@@ -195,6 +202,88 @@ export const BADGES: BadgeDef[] = [
     icon: 'Crown',
     tint: 'from-amber-300 to-orange-600',
     earned: (s) => s.hiveQueenWeeks >= 1,
+  },
+  // ── JS Motion visualizer ────────────────────────────────────────────────
+  {
+    id: 'viz-habit',
+    label: 'Getting the Habit',
+    description: 'Visualize code 3 days in a row.',
+    icon: 'CalendarCheck',
+    tint: 'from-lime-400 to-emerald-600',
+    earned: (s) => s.bestVizStreak >= 3,
+  },
+  {
+    id: 'viz-week',
+    label: 'Week Strong',
+    description: 'Visualize code 7 days in a row.',
+    icon: 'Flame',
+    tint: 'from-orange-400 to-red-600',
+    earned: (s) => s.bestVizStreak >= 7,
+  },
+  {
+    id: 'recursion-wrangler',
+    label: 'Recursion Wrangler',
+    description: 'Step all the way through the recursion demo.',
+    icon: 'GitBranch',
+    tint: 'from-violet-400 to-purple-600',
+    earned: (s) => s.conceptsCompleted.includes('recursion'),
+  },
+  {
+    id: 'closure-master',
+    label: 'Closure Master',
+    description: 'Step all the way through the closures demo.',
+    icon: 'Lasso',
+    tint: 'from-sky-400 to-indigo-600',
+    earned: (s) => s.conceptsCompleted.includes('closures'),
+  },
+  {
+    id: 'event-loop-navigator',
+    label: 'Event-Loop Navigator',
+    description: 'Step all the way through the event-loop demo.',
+    icon: 'Timer',
+    tint: 'from-teal-400 to-cyan-600',
+    earned: (s) => s.conceptsCompleted.includes('event-loop'),
+  },
+  {
+    id: 'oop-builder',
+    label: 'OOP Builder',
+    description: 'Step all the way through the classes demo.',
+    icon: 'Boxes',
+    tint: 'from-fuchsia-400 to-pink-600',
+    earned: (s) => s.conceptsCompleted.includes('oop'),
+  },
+  {
+    id: 'sorting-sifter',
+    label: 'Sorting Sifter',
+    description: 'Step all the way through the bubble-sort demo.',
+    icon: 'ArrowDownWideNarrow',
+    tint: 'from-cyan-400 to-teal-600',
+    earned: (s) => s.conceptsCompleted.includes('sorting'),
+  },
+  // ── Challenge Mode ──────────────────────────────────────────────────────
+  {
+    id: 'challenger',
+    label: 'Challenger',
+    description: 'Win your first staked challenge.',
+    icon: 'Swords',
+    tint: 'from-rose-400 to-red-600',
+    earned: (s) => s.challengeWins >= 1,
+  },
+  {
+    id: 'gladiator',
+    label: 'Gladiator',
+    description: 'Win 10 staked challenges.',
+    icon: 'Shield',
+    tint: 'from-orange-500 to-red-700',
+    earned: (s) => s.challengeWins >= 10,
+  },
+  {
+    id: 'flawless',
+    label: 'Flawless',
+    description: 'Win a Hard challenge in one-shot mode.',
+    icon: 'Flame',
+    tint: 'from-amber-400 to-rose-600',
+    earned: (s) => s.wonHardOneshot,
   },
 ]
 

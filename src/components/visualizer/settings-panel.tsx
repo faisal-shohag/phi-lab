@@ -23,7 +23,7 @@ interface SettingsPanelProps {
   enabledCount: number
 }
 
-const GROUPS: ('Understanding' | 'Concepts')[] = ['Understanding', 'Concepts']
+const GROUPS: ('Understanding' | 'Concepts' | 'Comfort')[] = ['Understanding', 'Concepts', 'Comfort']
 
 export function SettingsPanel({ settings, onToggle, onReset, enabledCount }: SettingsPanelProps) {
   return (

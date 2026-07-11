@@ -92,6 +92,17 @@ export class ParseError extends Error {
   }
 }
 
+// A runtime error (e.g. "x is not a function") tagged with the source line it
+// happened on, so the editor can point right at it — not just show a message.
+export class RuntimeError extends Error {
+  line: number
+  constructor(message: string, line: number) {
+    super(message)
+    this.name = 'RuntimeError'
+    this.line = line
+  }
+}
+
 // Parse-only check used by the editor to render error squiggles.
 export function getParseError(source: string): ParseErrorInfo | null {
   try {
@@ -182,12 +193,53 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
     sqrt: (x: RTValue) => Math.sqrt(x as number),
     pow: (a: RTValue, b: RTValue) => Math.pow(a as number, b as number),
     random: () => Math.random(),
+    sign: (x: RTValue) => Math.sign(x as number),
+    trunc: (x: RTValue) => Math.trunc(x as number),
+    cbrt: (x: RTValue) => Math.cbrt(x as number),
+    hypot: (...a: RTValue[]) => Math.hypot(...(a as number[])),
+    log: (x: RTValue) => Math.log(x as number),
+    log2: (x: RTValue) => Math.log2(x as number),
+    log10: (x: RTValue) => Math.log10(x as number),
+    exp: (x: RTValue) => Math.exp(x as number),
+    sin: (x: RTValue) => Math.sin(x as number),
+    cos: (x: RTValue) => Math.cos(x as number),
+    tan: (x: RTValue) => Math.tan(x as number),
+    atan2: (y: RTValue, x: RTValue) => Math.atan2(y as number, x as number),
+    E: Math.E,
   })
   builtins.set('parseInt', (s: RTValue, r?: RTValue) => parseInt(s as string, (r as number | undefined) ?? 10))
   builtins.set('parseFloat', (s: RTValue) => parseFloat(s as string))
   builtins.set('String', (v: RTValue) => formatValue(v))
-  builtins.set('Number', (v: RTValue) => Number(v))
+  const NumberFn = ((v: RTValue) => Number(v)) as any
+  NumberFn.isInteger = (v: RTValue) => Number.isInteger(v)
+  NumberFn.isFinite = (v: RTValue) => Number.isFinite(v)
+  NumberFn.isNaN = (v: RTValue) => Number.isNaN(v)
+  NumberFn.parseFloat = (v: RTValue) => parseFloat(v as string)
+  NumberFn.parseInt = (v: RTValue, r?: RTValue) => parseInt(v as string, (r as number | undefined) ?? 10)
+  NumberFn.MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER
+  NumberFn.MIN_SAFE_INTEGER = Number.MIN_SAFE_INTEGER
+  builtins.set('Number', NumberFn)
   builtins.set('Boolean', (v: RTValue) => Boolean(v))
+  builtins.set('Object', {
+    keys: (o: RTValue) => Object.keys(o as object),
+    values: (o: RTValue) => Object.values(o as object),
+    entries: (o: RTValue) => Object.entries(o as object).map(([k, v]) => [k, v] as RTValue),
+    assign: (t: RTValue, ...src: RTValue[]) => Object.assign(t as object, ...(src as object[])),
+    fromEntries: (e: RTValue) => Object.fromEntries(e as any),
+    freeze: (o: RTValue) => o,
+  })
+  builtins.set('Array', {
+    isArray: (v: RTValue) => Array.isArray(v),
+    from: (v: RTValue, fn?: RTValue) => {
+      const base = Array.from(v as any) as RTValue[]
+      return fn ? base.map((x, i) => invokeCallback(fn, [x, i])) : base
+    },
+    of: (...items: RTValue[]) => items,
+  })
+  builtins.set('JSON', {
+    stringify: (v: RTValue, _r?: RTValue, sp?: RTValue) => JSON.stringify(v, null, sp as any),
+    parse: (s: RTValue) => JSON.parse(s as string),
+  })
 
   // ---- async / event-loop builtins ----------------------------------------
   // These do not run their callbacks now: they schedule them, and a small
@@ -215,8 +267,12 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
   // A minimal resolved-promise thenable: enough to demo micro-task ordering
   // (Promise.resolve().then(...)). Chaining returns another resolved promise.
   function makeResolvedPromise(value: RTValue): RTValue {
+    // Already a promise? Don't double-wrap (matches Promise.resolve semantics).
+    if (value && typeof value === 'object' && (value as any).__isPromise) return value
     const p: { [k: string]: RTValue } = {}
     p.__isPromise = true as unknown as RTValue
+    // The resolved value, so `await` can unwrap it synchronously.
+    Object.defineProperty(p, '__value', { value, enumerable: false })
     p.then = ((cb: RTValue) => {
       usedAsync = true
       const label = taskLabel(cb, '.then')
@@ -232,6 +288,36 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
   builtins.set('Promise', {
     resolve: (v: RTValue) => makeResolvedPromise(v),
   })
+
+  // Map / Set constructors. The instance is a clean marker object; its real
+  // data lives in a side WeakMap (see mapStore / setStore) so heap snapshots and
+  // console.log formatting can show it without it leaking as object fields.
+  {
+    const MapCtor = function () { /* Map */ } as any
+    MapCtor.__isBuiltinCtor = true
+    MapCtor.__name = 'Map'
+    MapCtor.__construct = (args: RTValue[]) => {
+      const inst: { [k: string]: RTValue } = {}
+      const init = args[0]
+      const m = new Map<RTValue, RTValue>(
+        Array.isArray(init) ? (init as RTValue[]).map((e) => (Array.isArray(e) ? [e[0], e[1]] : [e, undefined]) as [RTValue, RTValue]) : [],
+      )
+      Object.defineProperty(inst, '__map', { value: m, enumerable: false })
+      return inst
+    }
+    builtins.set('Map', MapCtor)
+
+    const SetCtor = function () { /* Set */ } as any
+    SetCtor.__isBuiltinCtor = true
+    SetCtor.__name = 'Set'
+    SetCtor.__construct = (args: RTValue[]) => {
+      const inst: { [k: string]: RTValue } = {}
+      const init = args[0]
+      Object.defineProperty(inst, '__set', { value: new Set<RTValue>(Array.isArray(init) ? (init as RTValue[]) : []), enumerable: false })
+      return inst
+    }
+    builtins.set('Set', SetCtor)
+  }
 
   // Track the "current line" so console.log and helpers know what to report.
   let currentLine = 1
@@ -532,6 +618,28 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
       }
       case 'MemberExpression':
         return evalMember(node, scope)
+      case 'ChainExpression':
+        // Wrapper acorn puts around an optional chain (a?.b?.c). The optional
+        // short-circuit itself lives in evalMember / evalCall.
+        return evalExpr(node.expression, scope)
+      case 'ThisExpression':
+        return lookup(scope, 'this')
+      case 'ClassExpression':
+        return makeClass(node, scope)
+      case 'NewExpression': {
+        const cls = evalExpr(node.callee, scope)
+        return instantiate(cls, evalArgs(node.arguments, scope), node)
+      }
+      case 'AwaitExpression': {
+        usedAsync = true
+        const v = evalExpr(node.argument, scope)
+        // Our promises resolve synchronously, so await just unwraps the value.
+        const resolved = v && typeof v === 'object' && (v as any).__isPromise ? (v as any).__value : v
+        currentLine = node.loc?.start.line ?? currentLine
+        pushStep({ kind: 'dequeue', line: currentLine, description: `await → resumes with ${formatValue(resolved)}` })
+        recordTrail(node, resolved)
+        return resolved
+      }
       case 'CallExpression': {
         const v = evalCall(node, scope)
         recordTrail(node, v)
@@ -551,6 +659,11 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
 
   function evalMember(node: any, scope: Scope): RTValue {
     const obj = evalExpr(node.object, scope)
+    // Optional chaining: a?.b short-circuits to undefined when a is nullish.
+    if (node.optional && (obj === null || obj === undefined)) {
+      recordTrail(node, undefined)
+      return undefined
+    }
     let key: string | number
     if (node.computed) {
       key = evalExpr(node.property, scope) as string | number
@@ -585,6 +698,10 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
       if (key === 'length') val = obj.length
       else if (typeof key === 'number') val = obj[key]
       else val = undefined
+    } else if (mapOf(obj)) {
+      val = key === 'size' ? mapOf(obj)!.size : undefined
+    } else if (setOf(obj)) {
+      val = key === 'size' ? setOf(obj)!.size : undefined
     } else if (obj && typeof obj === 'object') {
       val = (obj as { [k: string]: RTValue })[String(key)]
     } else {
@@ -668,7 +785,85 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
     }
   }
 
+  // Flatten a destructuring pattern against a runtime value into a list of
+  // leaf {name, value} bindings — handles array/object patterns, nested
+  // patterns, defaults (AssignmentPattern) and rest (RestElement). The caller
+  // decides whether to declare or assign each name.
+  function destructure(pattern: any, value: RTValue, scope: Scope): { name: string; value: RTValue }[] {
+    const out: { name: string; value: RTValue }[] = []
+    const rec = (pat: any, val: RTValue) => {
+      if (!pat) return
+      switch (pat.type) {
+        case 'Identifier':
+          out.push({ name: pat.name, value: val })
+          return
+        case 'AssignmentPattern':
+          rec(pat.left, val === undefined ? evalExpr(pat.right, scope) : val)
+          return
+        case 'ArrayPattern': {
+          const arr = Array.isArray(val) ? val : []
+          let i = 0
+          for (const el of pat.elements) {
+            if (!el) { i++; continue }
+            if (el.type === 'RestElement') { rec(el.argument, arr.slice(i)); break }
+            rec(el, arr[i])
+            i++
+          }
+          return
+        }
+        case 'ObjectPattern': {
+          const used: string[] = []
+          for (const prop of pat.properties) {
+            if (prop.type === 'RestElement') {
+              const rest: { [k: string]: RTValue } = {}
+              if (val && typeof val === 'object' && !Array.isArray(val)) {
+                for (const k of Object.keys(val as object)) {
+                  if (!used.includes(k)) rest[k] = (val as { [k: string]: RTValue })[k]
+                }
+              }
+              rec(prop.argument, rest)
+              continue
+            }
+            const key = prop.computed
+              ? String(evalExpr(prop.key, scope))
+              : prop.key.type === 'Identifier'
+                ? prop.key.name
+                : String(prop.key.value)
+            used.push(key)
+            const v = val && typeof val === 'object' ? (val as any)[key] : undefined
+            rec(prop.value, v)
+          }
+          return
+        }
+        default:
+          throw new Error(`Unsupported destructuring pattern: ${pat.type}`)
+      }
+    }
+    rec(pattern, value)
+    return out
+  }
+
   function evalAssignment(node: any, scope: Scope): RTValue {
+    // Destructuring assignment: [a, b] = [b, a], ({x} = obj). The RHS is fully
+    // evaluated first, so swaps work.
+    if (node.left.type === 'ArrayPattern' || node.left.type === 'ObjectPattern') {
+      const rhs = evalExpr(node.right, scope)
+      currentLine = node.loc?.start.line ?? currentLine
+      for (const b of destructure(node.left, rhs, scope)) {
+        setVar(scope, b.name, b.value)
+        pushStep({
+          kind: 'assign',
+          line: currentLine,
+          description: `${b.name} = ${formatValue(b.value)}`,
+          result: asPrim(b.value),
+          focus: {
+            varName: b.name,
+            heapId: b.value !== null && typeof b.value === 'object' ? heapIdOf(b.value as object) : undefined,
+          },
+        })
+      }
+      return rhs
+    }
     const op = node.operator
     if (node.left.type === 'Identifier') {
       const name = node.left.name
@@ -748,31 +943,59 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
   }
 
   function evalCall(node: any, scope: Scope): RTValue {
+    // super(...) — call the parent constructor against the instance under
+    // construction (tracked on superStack).
+    if (node.callee.type === 'Super') {
+      const ctx = superStack[superStack.length - 1]
+      const args = evalArgs(node.arguments, scope)
+      currentLine = node.loc?.start.line ?? currentLine
+      pushStep({ kind: 'call', line: currentLine, description: `super(${args.map(formatValue).join(', ')})` })
+      if (ctx?.parent) runConstructor(ctx.parent, ctx.instance, args, node)
+      return undefined
+    }
+
     // Resolve callee.
     let fn: any
     let thisArg: any = undefined
     let calleeLabel: string
     if (node.callee.type === 'MemberExpression') {
-      thisArg = evalExpr(node.callee.object, scope)
+      const isSuper = node.callee.object.type === 'Super'
+      const ctx = superStack[superStack.length - 1]
+      thisArg = isSuper ? ctx?.instance : evalExpr(node.callee.object, scope)
       let key: string | number
       if (node.callee.computed) {
         key = evalExpr(node.callee.property, scope) as string | number
       } else {
         key = node.callee.property.name
       }
-      if (Array.isArray(thisArg)) {
+      if (isSuper) {
+        // super.method() runs the parent's method with the current `this`.
+        fn = findMethod(ctx?.parent, key as string)
+      } else if (Array.isArray(thisArg)) {
         fn = arrayMethod(thisArg, key as string)
+      } else if (mapOf(thisArg)) {
+        fn = mapMethod(mapOf(thisArg)!, thisArg, key as string)
+      } else if (setOf(thisArg)) {
+        fn = setMethod(setOf(thisArg)!, thisArg, key as string)
       } else if (thisArg && typeof thisArg === 'object') {
         fn = (thisArg as any)[String(key)]
+        // Instance method: not stored on the object, look it up on the class.
+        if ((fn === undefined || fn === null) && instanceClass.has(thisArg)) {
+          fn = findMethod(instanceClass.get(thisArg), key as string)
+        }
       } else if (typeof thisArg === 'string') {
         fn = stringMethod(thisArg, key as string)
       } else {
         fn = (thisArg as any)?.[String(key)]
       }
-      calleeLabel = `${srcOf(node.callee.object)}.${key}`
+      calleeLabel = isSuper ? `super.${key}` : `${srcOf(node.callee.object)}.${key}`
     } else {
       fn = evalExpr(node.callee, scope)
       calleeLabel = node.callee.name ?? 'anonymous'
+    }
+    // Optional call: a?.() or a.b?.() short-circuits when the callee is nullish.
+    if ((node.optional || node.callee?.optional) && (fn === null || fn === undefined)) {
+      return undefined
     }
     if (typeof fn !== 'function') {
       throw new Error(`${calleeLabel} is not a function`)
@@ -821,9 +1044,21 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
     }
     currentLine = node.loc?.start.line ?? currentLine
     // User functions are Function objects with a stored AST; we call them
-    // through callUserFn so we can keep recording steps.
+    // through callUserFn so we can keep recording steps. Member calls bind
+    // `this` to the receiver (object method, instance method, super.method).
     if (fn.__userFn) {
-      return callUserFn(fn, args, node, calleeLabel)
+      const thisForCall = node.callee.type === 'MemberExpression' ? thisArg : undefined
+      // Running a class method: make `super` inside it resolve against the
+      // parent of the method's home class, bound to this same instance.
+      if (fn.__homeClass) {
+        superStack.push({ parent: fn.__homeClass.__parent, instance: thisForCall as object })
+        try {
+          return callUserFn(fn, args, node, calleeLabel, thisForCall)
+        } finally {
+          superStack.pop()
+        }
+      }
+      return callUserFn(fn, args, node, calleeLabel, thisForCall)
     }
     // Built-ins like Math.max are plain JS functions we just call.
     const result = fn.apply(thisArg, args)
@@ -858,6 +1093,7 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
     fn.__body = node.body
     fn.__exprBody = node.type === 'ArrowFunctionExpression' && node.body.type !== 'BlockStatement'
     fn.__name = node.id?.name ?? nameHint ?? 'anonymous'
+    fn.__async = !!node.async
     fn.__closure = scope
     fn.__freeVars = collectFreeVars(node)
     fn.__loc = node.loc
@@ -866,7 +1102,7 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
     return fn
   }
 
-  function callUserFn(fn: any, args: RTValue[], callNode: any, calleeLabel: string): RTValue {
+  function callUserFn(fn: any, args: RTValue[], callNode: any, calleeLabel: string, thisVal?: RTValue): RTValue {
     const params = fn.__params as any[]
     const callLine = callNode.loc?.start.line ?? currentLine
 
@@ -879,24 +1115,23 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
     })
 
     const fnScope = newScope(fn.__closure ?? globalScope, fn.__name)
+    // Method calls bind `this`; plain function calls leave it undefined.
+    if (thisVal !== undefined) fnScope.vars.set('this', thisVal)
     const bindings: { name: string; value: string }[] = []
     for (let i = 0; i < params.length; i++) {
       const p = params[i]
-      let name: string
-      let val: RTValue = args[i]
-      if (p.type === 'Identifier') {
-        name = p.name
-      } else if (p.type === 'AssignmentPattern' && p.left.type === 'Identifier') {
-        name = p.left.name
-        if (val === undefined) val = evalExpr(p.right, fnScope)
-      } else if (p.type === 'RestElement' && p.argument.type === 'Identifier') {
-        name = p.argument.name
-        val = args.slice(i)
-      } else {
-        name = `arg${i}`
+      if (p.type === 'RestElement' && p.argument.type === 'Identifier') {
+        // A top-level rest param collects the remaining args as an array.
+        fnScope.vars.set(p.argument.name, args.slice(i))
+        bindings.push({ name: p.argument.name, value: formatValue(args.slice(i)) })
+        continue
       }
-      fnScope.vars.set(name, val)
-      bindings.push({ name, value: formatValue(val) })
+      // Identifier, default (AssignmentPattern) and array/object patterns all
+      // flow through destructure, which handles nesting and defaults.
+      for (const b of destructure(p, args[i], fnScope)) {
+        fnScope.vars.set(b.name, b.value)
+        bindings.push({ name: b.name, value: formatValue(b.value) })
+      }
     }
 
     callStack.push({
@@ -941,18 +1176,193 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
     pushStep({
       kind: 'return',
       line: currentLine,
-      description: `${fn.__name} returned ${formatValue(ret)}`,
+      description: fn.__async
+        ? `${fn.__name} returned a Promise (resolves to ${formatValue(ret)})`
+        : `${fn.__name} returned ${formatValue(ret)}`,
       result: asPrim(ret),
       exprTrail: exitTrail,
       callLine,
       fnLoc: fn.__loc,
     })
-    return ret
+    // An async function always hands back a promise; `await` unwraps it. Our
+    // promises resolve synchronously, so this models the value flow (not the
+    // full suspension) — enough to teach async/await + the microtask queue.
+    return fn.__async ? makeResolvedPromise(ret) : ret
   }
 
-  // Array methods we support.
+  // Invoke a callback (user function or built-in) with the given args. Used by
+  // higher-order array methods (map/filter/reduce/…) so a user-written callback
+  // still runs through the interpreter and records its own steps.
+  function invokeCallback(fn: RTValue, args: RTValue[]): RTValue {
+    if (typeof fn === 'function' && (fn as any).__userFn) {
+      const synthetic = { loc: { start: { line: currentLine }, end: { line: currentLine } } }
+      return callUserFn(fn, args, synthetic, (fn as any).__name ?? 'callback')
+    }
+    if (typeof fn === 'function') return (fn as RTCallable)(...args)
+    throw new Error('Expected a function as the callback argument')
+  }
+
+  // ---- classes / instances / Map / Set ------------------------------------
+  // An instance's class lives in a side table so the instance object itself
+  // stays clean (only real data fields) for the heap/memory views. A Map/Set
+  // instance carries its real backing store as a NON-enumerable `__map`/`__set`
+  // property: invisible to Object.entries/JSON (so heap snapshots stay clean),
+  // but readable by formatValue (which lives outside this closure) for display.
+  const instanceClass = new WeakMap<object, any>()
+  const mapOf = (o: unknown): Map<RTValue, RTValue> | undefined => {
+    const m = (o as any)?.__map
+    return m instanceof Map ? m : undefined
+  }
+  const setOf = (o: unknown): Set<RTValue> | undefined => {
+    const s = (o as any)?.__set
+    return s instanceof Set ? s : undefined
+  }
+  // Active constructor contexts, so `super(...)` / `super.m()` find the parent.
+  const superStack: { parent: any; instance: object }[] = []
+
+  // Evaluate a call/new argument list, expanding spreads.
+  function evalArgs(argNodes: any[], scope: Scope): RTValue[] {
+    const args: RTValue[] = []
+    for (const a of argNodes) {
+      if (a.type === 'SpreadElement') {
+        const v = evalExpr(a.argument, scope)
+        if (Array.isArray(v)) args.push(...v)
+      } else {
+        args.push(evalExpr(a, scope))
+      }
+    }
+    return args
+  }
+
+  // Build a class runtime value from a ClassDeclaration/ClassExpression node.
+  // We model the class as a Function object so snapshots render it as `ƒ Name()`
+  // and `new` can find it, while `__isClass` carries the teaching metadata.
+  function makeClass(node: any, scope: Scope): any {
+    const cls = function () { /* class */ } as any
+    cls.__isClass = true
+    cls.__name = node.id?.name ?? 'Class'
+    cls.__ctor = null
+    cls.__methods = new Map<string, any>()
+    cls.__parent = node.superClass ? evalExpr(node.superClass, scope) : null
+    cls.__closure = scope
+    cls.__loc = node.loc ? { line: node.loc.start.line, endLine: node.loc.end.line } : undefined
+    cls.__fnCache = new Map<string, RTValue>()
+    cls.__fields = [] as { name: string; value: any }[]
+    for (const m of node.body.body) {
+      if (m.type === 'MethodDefinition') {
+        const name = m.key.name ?? m.key.value
+        if (m.kind === 'constructor') cls.__ctor = m.value
+        else cls.__methods.set(name, m.value)
+      } else if (m.type === 'PropertyDefinition' && !m.static) {
+        // Class field: name = <expr>. Initialised per instance.
+        cls.__fields.push({ name: m.key.name ?? m.key.value, value: m.value })
+      }
+    }
+    return cls
+  }
+
+  // Initialise class-field defaults on a fresh instance, base class first so a
+  // subclass field can shadow a parent's.
+  function initFields(cls: any, instance: { [k: string]: RTValue }): void {
+    if (!cls || !cls.__isClass) return
+    initFields(cls.__parent, instance)
+    for (const f of cls.__fields ?? []) {
+      const fScope = newScope(cls.__closure, 'field')
+      fScope.vars.set('this', instance)
+      instance[f.name] = f.value ? evalExpr(f.value, fScope) : undefined
+    }
+  }
+
+  // Walk the prototype chain for a method, returning a (cached) user function
+  // bound to the class where it was defined.
+  function findMethod(cls: any, name: string): RTValue | undefined {
+    let c = cls
+    while (c && c.__isClass) {
+      if (c.__methods.has(name)) {
+        let fn = c.__fnCache.get(name)
+        if (!fn) {
+          fn = makeUserFn(c.__methods.get(name), c.__closure, name)
+          // Home class = where this method is defined, so `super` inside it
+          // resolves against the right parent.
+          ;(fn as any).__homeClass = c
+          c.__fnCache.set(name, fn)
+        }
+        return fn
+      }
+      c = c.__parent
+    }
+    return undefined
+  }
+
+  function runConstructor(cls: any, instance: object, args: RTValue[], callNode: any): void {
+    if (cls.__ctor) {
+      const fn = makeUserFn(cls.__ctor, cls.__closure, 'constructor')
+      superStack.push({ parent: cls.__parent, instance })
+      try {
+        callUserFn(fn, args, callNode, `${cls.__name} constructor`, instance as RTValue)
+      } finally {
+        superStack.pop()
+      }
+    } else if (cls.__parent) {
+      // No own constructor → implicit super(...args).
+      runConstructor(cls.__parent, instance, args, callNode)
+    }
+  }
+
+  function instantiate(cls: any, args: RTValue[], node: any): RTValue {
+    // Built-in constructors (Map, Set) build their own instances.
+    if (cls && cls.__isBuiltinCtor) return cls.__construct(args)
+    if (!cls || !cls.__isClass) {
+      throw new Error(`${srcOf(node.callee)} is not a constructor`)
+    }
+    const instance: { [k: string]: RTValue } = {}
+    instanceClass.set(instance, cls)
+    currentLine = node.loc?.start.line ?? currentLine
+    pushStep({
+      kind: 'call',
+      line: currentLine,
+      description: `new ${cls.__name}(${args.map(formatValue).join(', ')})`,
+      focus: { heapId: heapIdOf(instance) },
+    })
+    initFields(cls, instance)
+    runConstructor(cls, instance, args, node)
+    return instance
+  }
+
+  // Map / Set method tables — dispatched in evalCall when the receiver carries a
+  // backing store. Return plain JS closures the caller just invokes.
+  function mapMethod(m: Map<RTValue, RTValue>, self: RTValue, name: string): any {
+    switch (name) {
+      case 'set': return (k: RTValue, v: RTValue) => { m.set(k, v); return self }
+      case 'get': return (k: RTValue) => m.get(k)
+      case 'has': return (k: RTValue) => m.has(k)
+      case 'delete': return (k: RTValue) => m.delete(k)
+      case 'clear': return () => { m.clear(); return undefined }
+      case 'keys': return () => [...m.keys()]
+      case 'values': return () => [...m.values()]
+      case 'entries': return () => [...m.entries()].map(([k, v]) => [k, v] as RTValue)
+      case 'forEach': return (cb: RTValue) => { m.forEach((v, k) => invokeCallback(cb, [v, k, self])); return undefined }
+      default: throw new Error(`Unsupported Map method: ${name}`)
+    }
+  }
+  function setMethod(s: Set<RTValue>, self: RTValue, name: string): any {
+    switch (name) {
+      case 'add': return (v: RTValue) => { s.add(v); return self }
+      case 'has': return (v: RTValue) => s.has(v)
+      case 'delete': return (v: RTValue) => s.delete(v)
+      case 'clear': return () => { s.clear(); return undefined }
+      case 'values': return () => [...s.values()]
+      case 'keys': return () => [...s.keys()]
+      case 'forEach': return (cb: RTValue) => { s.forEach((v) => invokeCallback(cb, [v, v, self])); return undefined }
+      default: throw new Error(`Unsupported Set method: ${name}`)
+    }
+  }
+
+  // Array methods we support. Higher-order ones route their callback through
+  // invokeCallback so user callbacks execute inside the interpreter.
   function arrayMethod(arr: RTValue[], name: string): any {
     switch (name) {
+      // ---- mutation / basics ----
       case 'push':
         return (...items: RTValue[]) => { arr.push(...items); return arr.length }
       case 'pop':
@@ -961,18 +1371,74 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
         return () => arr.shift()
       case 'unshift':
         return (...items: RTValue[]) => { arr.unshift(...items); return arr.length }
+      case 'splice':
+        return (start: number, deleteCount?: number, ...items: RTValue[]) =>
+          deleteCount === undefined ? arr.splice(start) : arr.splice(start, deleteCount, ...items)
+      case 'fill':
+        return (v: RTValue, s?: number, e?: number) => arr.fill(v, s, e)
+      case 'copyWithin':
+        return (t: number, s?: number, e?: number) => arr.copyWithin(t, s ?? 0, e)
+      case 'reverse':
+        return () => arr.reverse()
+      case 'sort':
+        return (cmp?: RTValue) =>
+          typeof cmp === 'function'
+            ? arr.sort((a, b) => Number(invokeCallback(cmp, [a, b])))
+            : arr.sort()
+      // ---- read / derive ----
       case 'slice':
         return (a?: number, b?: number) => arr.slice(a as number, b as number)
+      case 'at':
+        return (i: number) => arr.at(i)
       case 'indexOf':
-        return (x: RTValue) => arr.indexOf(x)
+        return (x: RTValue, from?: number) => arr.indexOf(x, from)
+      case 'lastIndexOf':
+        return (x: RTValue, from?: number) => from === undefined ? arr.lastIndexOf(x) : arr.lastIndexOf(x, from)
       case 'includes':
         return (x: RTValue) => arr.includes(x)
       case 'join':
         return (sep?: string) => arr.join(sep ?? ',')
-      case 'reverse':
-        return () => arr.reverse()
       case 'concat':
         return (...items: RTValue[]) => (arr as RTValue[]).concat(...(items as RTValue[][]))
+      case 'flat':
+        return (d?: number) => (arr as any).flat(d ?? 1)
+      case 'keys':
+        return () => [...arr.keys()]
+      case 'values':
+        return () => [...arr.values()]
+      case 'entries':
+        return () => [...arr.entries()].map(([i, v]) => [i, v] as RTValue)
+      // ---- higher-order (callback) ----
+      case 'forEach':
+        return (fn: RTValue) => { arr.forEach((v, i) => invokeCallback(fn, [v, i, arr])); return undefined }
+      case 'map':
+        return (fn: RTValue) => arr.map((v, i) => invokeCallback(fn, [v, i, arr]))
+      case 'filter':
+        return (fn: RTValue) => arr.filter((v, i) => Boolean(invokeCallback(fn, [v, i, arr])))
+      case 'find':
+        return (fn: RTValue) => arr.find((v, i) => Boolean(invokeCallback(fn, [v, i, arr])))
+      case 'findIndex':
+        return (fn: RTValue) => arr.findIndex((v, i) => Boolean(invokeCallback(fn, [v, i, arr])))
+      case 'findLast':
+        return (fn: RTValue) => (arr as any).findLast((v: RTValue, i: number) => Boolean(invokeCallback(fn, [v, i, arr])))
+      case 'findLastIndex':
+        return (fn: RTValue) => (arr as any).findLastIndex((v: RTValue, i: number) => Boolean(invokeCallback(fn, [v, i, arr])))
+      case 'some':
+        return (fn: RTValue) => arr.some((v, i) => Boolean(invokeCallback(fn, [v, i, arr])))
+      case 'every':
+        return (fn: RTValue) => arr.every((v, i) => Boolean(invokeCallback(fn, [v, i, arr])))
+      case 'flatMap':
+        return (fn: RTValue) => (arr as any).flatMap((v: RTValue, i: number) => invokeCallback(fn, [v, i, arr]))
+      case 'reduce':
+        return (fn: RTValue, ...init: RTValue[]) =>
+          init.length
+            ? arr.reduce((acc, v, i) => invokeCallback(fn, [acc, v, i, arr]), init[0])
+            : arr.reduce((acc, v, i) => invokeCallback(fn, [acc, v, i, arr]))
+      case 'reduceRight':
+        return (fn: RTValue, ...init: RTValue[]) =>
+          init.length
+            ? arr.reduceRight((acc, v, i) => invokeCallback(fn, [acc, v, i, arr]), init[0])
+            : arr.reduceRight((acc, v, i) => invokeCallback(fn, [acc, v, i, arr]))
       default:
         throw new Error(`Unsupported array method: ${name}`)
     }
@@ -997,6 +1463,26 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
         return s.repeat(n)
       }
       case 'trim': return () => s.trim()
+      case 'trimStart': return () => s.trimStart()
+      case 'trimEnd': return () => s.trimEnd()
+      case 'startsWith': return (x: string, p?: number) => s.startsWith(x, p)
+      case 'endsWith': return (x: string, p?: number) => s.endsWith(x, p)
+      case 'substring': return (a?: number, b?: number) => s.substring(a as number, b as number)
+      case 'substr': return (a: number, len?: number) => s.substr(a, len)
+      case 'at': return (i: number) => s.at(i)
+      case 'concat': return (...xs: string[]) => s.concat(...xs)
+      case 'replace': return (a: string, b: string) => s.replace(a, b)
+      case 'replaceAll': return (a: string, b: string) => s.replaceAll(a, b)
+      case 'padStart': return (n: number, pad?: string) => {
+        if (n > 100000) throw new Error(`.padStart(${n}) would build a huge string. Try 100000 or less.`)
+        return s.padStart(n, pad)
+      }
+      case 'padEnd': return (n: number, pad?: string) => {
+        if (n > 100000) throw new Error(`.padEnd(${n}) would build a huge string. Try 100000 or less.`)
+        return s.padEnd(n, pad)
+      }
+      case 'lastIndexOf': return (x: string) => s.lastIndexOf(x)
+      case 'codePointAt': return (i: number) => s.codePointAt(i)
       default: throw new Error(`Unsupported string method: ${name}`)
     }
   }
@@ -1021,8 +1507,24 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
     switch (node.type) {
       case 'VariableDeclaration': {
         for (const decl of node.declarations) {
-          if (decl.id.type !== 'Identifier') {
-            throw new Error('Destructuring declarations are not supported yet')
+          // Destructuring declaration: const { a, b } = obj / const [x, y] = arr.
+          if (decl.id.type === 'ArrayPattern' || decl.id.type === 'ObjectPattern') {
+            const init = decl.init ? evalExpr(decl.init, scope) : undefined
+            currentLine = decl.loc?.start.line ?? currentLine
+            for (const b of destructure(decl.id, init, scope)) {
+              scope.vars.set(b.name, b.value)
+              pushStep({
+                kind: 'declare',
+                line: currentLine,
+                description: `${node.kind} ${b.name} = ${formatValue(b.value)}`,
+                result: asPrim(b.value),
+                focus: {
+                  varName: b.name,
+                  heapId: b.value !== null && typeof b.value === 'object' ? heapIdOf(b.value as object) : undefined,
+                },
+              })
+            }
+            continue
           }
           let value: RTValue = undefined
           let trail: string[] | undefined
@@ -1188,18 +1690,70 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
       case 'ForOfStatement': {
         const loopScope = newScope(scope, 'for-of')
         withScope(loopScope, () => {
-          const arr = evalExpr(node.right, scope) as RTValue[]
+          const right = evalExpr(node.right, scope)
+          // for...of also iterates strings, Sets, and Maps (entries as [k, v]).
+          const arr: RTValue[] = Array.isArray(right)
+            ? right
+            : typeof right === 'string'
+              ? (right.split('') as RTValue[])
+              : setOf(right)
+                ? [...setOf(right)!]
+                : mapOf(right)
+                  ? [...mapOf(right)!.entries()].map(([k, v]) => [k, v] as RTValue)
+                  : []
           currentLine = node.loc?.start.line ?? currentLine
-          pushStep({ kind: 'loop-start', line: currentLine, description: `for...of begins over array of ${Array.isArray(arr) ? arr.length : 0} items`, iteration: 0 })
+          pushStep({ kind: 'loop-start', line: currentLine, description: `for...of begins over ${arr.length} items`, iteration: 0 })
+          const leftTarget = node.left.type === 'VariableDeclaration' ? node.left.declarations[0].id : node.left
           let i = 0
-          for (const item of Array.isArray(arr) ? arr : []) {
-            const name = node.left.type === 'VariableDeclaration' ? node.left.declarations[0].id.name : node.left.name
-            loopScope.vars.set(name, item)
+          for (const item of arr) {
+            // The loop variable can be a plain name or a pattern (for (const [k,v] of map)).
+            let name: string
+            if (leftTarget.type === 'Identifier') {
+              name = leftTarget.name
+              loopScope.vars.set(name, item)
+            } else {
+              const binds = destructure(leftTarget, item, loopScope)
+              for (const b of binds) loopScope.vars.set(b.name, b.value)
+              name = binds.map((b) => `${b.name}=${formatValue(b.value)}`).join(', ')
+            }
             currentLine = node.left.loc?.start.line ?? currentLine
             pushStep({
               kind: 'loop-iter',
               line: currentLine,
-              description: `${name} = ${formatValue(item)}  (item ${i + 1}/${Array.isArray(arr) ? arr.length : 0})`,
+              description: leftTarget.type === 'Identifier'
+                ? `${name} = ${formatValue(item)}  (item ${i + 1}/${arr.length})`
+                : `${name}  (item ${i + 1}/${arr.length})`,
+              iteration: i,
+              focus: { varName: leftTarget.type === 'Identifier' ? name : undefined },
+            })
+            try {
+              execStmt(node.body, loopScope)
+            } catch (e) {
+              if (e instanceof BreakSignal) break
+              if (!(e instanceof ContinueSignal)) throw e
+            }
+            i++
+          }
+          pushStep({ kind: 'loop-end', line: currentLine, description: `for...of ended after ${i} iteration(s)` })
+        })
+        return
+      }
+      case 'ForInStatement': {
+        const loopScope = newScope(scope, 'for-in')
+        withScope(loopScope, () => {
+          const obj = evalExpr(node.right, scope)
+          const keys = obj && typeof obj === 'object' ? Object.keys(obj as object) : []
+          currentLine = node.loc?.start.line ?? currentLine
+          pushStep({ kind: 'loop-start', line: currentLine, description: `for...in begins over ${keys.length} key(s)`, iteration: 0 })
+          let i = 0
+          for (const key of keys) {
+            const name = node.left.type === 'VariableDeclaration' ? node.left.declarations[0].id.name : node.left.name
+            loopScope.vars.set(name, key)
+            currentLine = node.left.loc?.start.line ?? currentLine
+            pushStep({
+              kind: 'loop-iter',
+              line: currentLine,
+              description: `${name} = "${key}"  (key ${i + 1}/${keys.length})`,
               iteration: i,
               focus: { varName: name },
             })
@@ -1211,7 +1765,54 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
             }
             i++
           }
-          pushStep({ kind: 'loop-end', line: currentLine, description: `for...of ended after ${i} iteration(s)` })
+          pushStep({ kind: 'loop-end', line: currentLine, description: `for...in ended after ${i} iteration(s)` })
+        })
+        return
+      }
+      case 'SwitchStatement': {
+        const disc = evalExpr(node.discriminant, scope)
+        const switchScope = newScope(scope, 'switch')
+        withScope(switchScope, () => {
+          currentLine = node.loc?.start.line ?? currentLine
+          pushStep({
+            kind: 'condition',
+            line: currentLine,
+            description: `switch (${srcOf(node.discriminant)}) → ${formatValue(disc)}`,
+          })
+          const cases = node.cases as any[]
+          // JS switch uses strict === and falls through until a break. Find the
+          // first matching case (or default), then run from there.
+          let start = -1
+          for (let i = 0; i < cases.length; i++) {
+            if (cases[i].test !== null && evalExpr(cases[i].test, switchScope) === disc) { start = i; break }
+          }
+          if (start === -1) start = cases.findIndex((c) => c.test === null)
+          if (start === -1) {
+            pushStep({ kind: 'branch', line: currentLine, description: 'No case matched (no default)' })
+            return
+          }
+          const label = cases[start].test === null ? 'default' : `case ${srcOf(cases[start].test)}`
+          pushStep({ kind: 'branch', line: cases[start].loc?.start.line ?? currentLine, description: `Match → ${label}` })
+          try {
+            for (let i = start; i < cases.length; i++) {
+              for (const st of cases[i].consequent) execStmt(st, switchScope)
+            }
+          } catch (e) {
+            if (!(e instanceof BreakSignal)) throw e
+          }
+        })
+        return
+      }
+      case 'ClassDeclaration': {
+        const cls = makeClass(node, scope)
+        if (node.id) scope.vars.set(node.id.name, cls)
+        currentLine = node.loc?.start.line ?? currentLine
+        pushStep({
+          kind: 'declare',
+          line: currentLine,
+          description: `class ${node.id?.name ?? ''}${node.superClass ? ' extends ' + srcOf(node.superClass) : ''} declared`,
+          fnLoc: cls.__loc,
+          focus: { varName: node.id?.name },
         })
         return
       }
@@ -1365,8 +1966,13 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
       // partial trace so the user can watch the stack grow toward the overflow.
       truncated = true
       stackOverflow = true
-    } else {
+    } else if (e instanceof RuntimeError) {
       throw e
+    } else {
+      // Any other runtime failure ("x is not a function", bad property access,
+      // etc.): tag it with the line we were last executing so the UI can point
+      // at it, and hand back a clean message instead of a raw stack.
+      throw new RuntimeError(e instanceof Error ? e.message : String(e), currentLine)
     }
   }
 
@@ -1634,6 +2240,15 @@ export function formatValue(v: unknown): string {
   if (Array.isArray(v)) return '[' + v.map(formatQuoted).join(', ') + ']'
   if (typeof v === 'function') return `ƒ ${(v as any).__name ?? ''}()`
   if (typeof v === 'object') {
+    const anyV = v as any
+    // Map / Set instances keep their real store on a non-enumerable property.
+    if (anyV.__map instanceof Map) {
+      return `Map(${anyV.__map.size}) {${[...anyV.__map.entries()].map(([k, val]) => `${formatQuoted(k)} => ${formatQuoted(val)}`).join(', ')}}`
+    }
+    if (anyV.__set instanceof Set) {
+      return `Set(${anyV.__set.size}) {${[...anyV.__set].map(formatQuoted).join(', ')}}`
+    }
+    if (anyV.__isPromise) return 'Promise { <resolved> }'
     return '{' + Object.entries(v as object).map(([k, val]) => `${k}: ${formatQuoted(val)}`).join(', ') + '}'
   }
   return String(v)

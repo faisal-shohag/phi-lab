@@ -35,6 +35,8 @@ export interface EditorHighlight {
   ghostText?: string
   // Ghost text appended after the function signature line (param bindings).
   signatureText?: string
+  // Calm "focus" mode: dim every line except the active one.
+  dimInactive?: boolean
 }
 
 interface CodeEditorProps {
@@ -45,6 +47,8 @@ interface CodeEditorProps {
   breakpoints: Set<number>
   onToggleBreakpoint: (line: number) => void
   readOnly?: boolean
+  // 1-indexed line where the last run threw a runtime error, tinted red.
+  errorLine?: number | null
 }
 
 // Map step kinds onto a small set of highlight color groups.
@@ -115,6 +119,15 @@ function buildHighlightDeco(state: EditorState, h: EditorHighlight | null): Deco
       from: state.doc.line(fnStart).to,
       deco: Decoration.widget({ widget: new GhostWidget(h.signatureText, 'cm-ghost cm-ghost-sig'), side: 1 }),
     })
+  }
+  // Focus dimming: fade every line except the active one so the eye rests on
+  // the step running now. Line decorations stack, so this coexists with the
+  // fn-region / callsite tints above.
+  if (h.dimInactive && h.activeLine && h.activeLine >= 1 && h.activeLine <= lines) {
+    for (let ln = 1; ln <= lines; ln++) {
+      if (ln === h.activeLine) continue
+      ranges.push({ from: state.doc.line(ln).from, deco: Decoration.line({ class: 'cm-dim-line' }) })
+    }
   }
   return Decoration.set(
     ranges.map((r) => r.deco.range(r.from)),
@@ -193,6 +206,35 @@ const execBarPlugin = ViewPlugin.fromClass(
 )
 
 // ---------------------------------------------------------------------------
+// Runtime-error line highlight
+// ---------------------------------------------------------------------------
+// Distinct from the parse-error squiggle (which lints as-you-type). This marks
+// the line where the last *run* threw, e.g. "nums.foo is not a function".
+
+const setErrorLineEffect = StateEffect.define<number | null>()
+
+const errorLineField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(deco, tr) {
+    deco = deco.map(tr.changes)
+    for (const e of tr.effects) {
+      if (e.is(setErrorLineEffect)) {
+        const ln = e.value
+        if (!ln || ln < 1 || ln > tr.state.doc.lines) {
+          deco = Decoration.none
+        } else {
+          deco = Decoration.set([
+            Decoration.line({ class: 'cm-error-line' }).range(tr.state.doc.line(ln).from),
+          ])
+        }
+      }
+    }
+    return deco
+  },
+  provide: (f) => EditorView.decorations.from(f),
+})
+
+// ---------------------------------------------------------------------------
 // Breakpoint gutter
 // ---------------------------------------------------------------------------
 
@@ -263,6 +305,14 @@ const baseTheme = EditorView.theme({
     paddingLeft: '1.5em',
     opacity: '0.8',
     pointerEvents: 'none',
+  },
+  '.cm-error-line': {
+    backgroundColor: 'rgba(244, 63, 94, 0.14)',
+    boxShadow: 'inset 3px 0 0 0 #f43f5e',
+  },
+  '.cm-dim-line': {
+    opacity: '0.32',
+    transition: 'opacity 0.25s ease',
   },
   '.cm-exec-bar': {
     position: 'absolute',
@@ -409,6 +459,7 @@ export function CodeEditor({
   breakpoints,
   onToggleBreakpoint,
   readOnly,
+  errorLine,
 }: CodeEditorProps) {
   const editorRef = useRef<ReactCodeMirrorRef>(null)
   const isDark = useIsDarkClass()
@@ -458,6 +509,7 @@ export function CodeEditor({
       highlightField,
       execHighlightState,
       execBarPlugin,
+      errorLineField,
       breakpointsField,
       bpGutter,
       parseLinter,
@@ -494,6 +546,13 @@ export function CodeEditor({
     view.dispatch({ effects: setBreakpointsEffect.of(new Set(breakpoints)) })
   }, [breakpoints])
 
+  // Push the runtime-error line tint.
+  useEffect(() => {
+    const view = editorRef.current?.view
+    if (!view) return
+    view.dispatch({ effects: setErrorLineEffect.of(errorLine ?? null) })
+  }, [errorLine])
+
   return (
     <CodeMirror
       ref={editorRef}
@@ -519,6 +578,7 @@ export function CodeEditor({
             themeCompartment.reconfigure(isDark ? darkTheme : lightTheme),
             setHighlightEffect.of(highlight ?? null),
             setBreakpointsEffect.of(new Set(breakpoints)),
+            setErrorLineEffect.of(errorLine ?? null),
           ],
         })
       }}

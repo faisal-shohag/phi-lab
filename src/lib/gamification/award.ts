@@ -76,13 +76,50 @@ export async function awardXp(input: AwardInput): Promise<AwardResult> {
   }
 }
 
+export interface SpendResult {
+  /** false when the balance was too low or this (reason,sourceId) already spent. */
+  spent: boolean
+  /** The user's XP balance after (or without) the spend. */
+  balance: number
+}
+
+/**
+ * Deduct XP idempotently — the counterpart to awardXp, used to stake a challenge.
+ * Writes a NEGATIVE XpEvent and decrements the running total. Refuses if the
+ * balance is below `amount` (no going negative) or if this (reason, sourceId)
+ * was already spent (the unique constraint makes the retry a no-op).
+ */
+export async function spendXp(input: AwardInput): Promise<SpendResult> {
+  const { userId, reason, sourceId, meta } = input
+  const amount = Math.max(0, Math.floor(input.amount))
+
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { xp: true } })
+  const balance = user?.xp ?? 0
+  if (balance < amount) return { spent: false, balance }
+
+  try {
+    await prisma.xpEvent.create({
+      data: { userId, reason, sourceId, amount: -amount, meta: (meta ?? undefined) as object | undefined },
+    })
+  } catch {
+    return { spent: false, balance }
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: { xp: { decrement: amount } },
+    select: { xp: true },
+  })
+  return { spent: true, balance: updated.xp }
+}
+
 /** Aggregate the numbers badge predicates need, straight from the ledger. */
 export async function getStats(userId: string): Promise<BadgeStats> {
   const [user, events] = await Promise.all([
     prisma.user.findUnique({ where: { id: userId }, select: { xp: true } }),
     prisma.xpEvent.findMany({
       where: { userId },
-      select: { reason: true, meta: true },
+      select: { reason: true, meta: true, createdAt: true },
     }),
   ])
 
@@ -102,10 +139,22 @@ export async function getStats(userId: string): Promise<BadgeStats> {
   let hiveApproved = 0
   let hiveAccepted = 0
   let hiveQueenWeeks = 0
+  // JS Motion visualizer engagement.
+  const vizDays = new Set<string>()
+  const conceptsCompleted = new Set<string>()
+  let challengeWins = 0
+  let wonHardOneshot = false
 
   for (const e of events) {
     const meta = (e.meta ?? {}) as Record<string, unknown>
-    if (e.reason === 'interview_completed') {
+    if (e.reason === 'viz_daily') {
+      vizDays.add(e.createdAt.toISOString().slice(0, 10))
+    } else if (e.reason === 'viz_concept') {
+      if (typeof meta.concept === 'string') conceptsCompleted.add(meta.concept)
+    } else if (e.reason === 'viz_challenge_win') {
+      challengeWins++
+      if (meta.difficulty === 'hard' && meta.mode === 'oneshot') wonHardOneshot = true
+    } else if (e.reason === 'interview_completed') {
       interviewsCompleted++
       const score = typeof meta.score === 'number' ? meta.score : 0
       if (score > bestInterviewScore) bestInterviewScore = score
@@ -158,7 +207,31 @@ export async function getStats(userId: string): Promise<BadgeStats> {
     hiveApproved,
     hiveAccepted,
     hiveQueenWeeks,
+    vizDaysPracticed: vizDays.size,
+    bestVizStreak: longestDayStreak(vizDays),
+    conceptsCompleted: [...conceptsCompleted],
+    challengeWins,
+    wonHardOneshot,
   }
+}
+
+// Longest run of consecutive calendar days present in the set (UTC).
+function longestDayStreak(days: Set<string>): number {
+  if (days.size === 0) return 0
+  const sorted = [...days].sort()
+  let best = 1
+  let run = 1
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = Date.parse(sorted[i - 1] + 'T00:00:00Z')
+    const cur = Date.parse(sorted[i] + 'T00:00:00Z')
+    if (cur - prev === 86_400_000) {
+      run++
+      if (run > best) best = run
+    } else {
+      run = 1
+    }
+  }
+  return best
 }
 
 /** Insert any newly-earned badges; returns the ids that were just unlocked. */

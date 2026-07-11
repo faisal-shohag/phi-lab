@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 import { AnimatePresence, motion } from 'framer-motion'
 import confetti from 'canvas-confetti'
 import {
@@ -15,9 +16,15 @@ import {
   Share2,
   BarChart3,
   GraduationCap,
+  Lock,
+  Sparkles,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { interpret } from '@/lib/visualizer/interpreter'
+import { interpret, RuntimeError } from '@/lib/visualizer/interpreter'
+import { playStepSound, playFinishSound, unlockAudio } from '@/lib/visualizer/sound'
+import { authClient } from '@/lib/auth-client'
+import { AiTutor, type TutorLang, type TutorRequest } from '@/components/visualizer/ai-tutor'
+import { AiInsights } from '@/components/visualizer/ai-insights'
 import { DEMO_EXAMPLES } from '@/lib/visualizer/examples'
 import type { Step, Trace } from '@/lib/visualizer/types'
 import { heapMap } from '@/lib/visualizer/values'
@@ -87,7 +94,14 @@ import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
 import { XpBadge } from '@/components/gamification/xp-badge'
 import { XpHint } from '@/components/gamification/xp-hint'
 import { UserMenu } from '@/components/auth/user-menu'
-import { award as awardXp } from '@/lib/gamification/use-xp'
+import { award as awardXp, useXp, refreshXp } from '@/lib/gamification/use-xp'
+import { ChallengeSetup, type ActiveChallenge, type SubmitResult } from '@/components/visualizer/challenge-setup'
+import { ChallengeArena } from '@/components/visualizer/challenge-arena'
+import { ChallengeResult } from '@/components/visualizer/challenge-result'
+import { LeaderboardDialog } from '@/components/visualizer/leaderboard-dialog'
+import { AiChargeDialog } from '@/components/visualizer/ai-charge-dialog'
+import { isTopic, type Difficulty, type Mode, type ChallengeSource, type ChallengeTopic } from '@/lib/visualizer/challenge'
+import { Swords, Trophy } from 'lucide-react'
 
 // Short stable hash of the current program, used to make quiz XP idempotent per
 // (program, step) so re-running the same code can't farm repeat XP.
@@ -95,6 +109,20 @@ function codeHash(src: string): string {
   let h = 5381
   for (let i = 0; i < src.length; i++) h = ((h << 5) + h + src.charCodeAt(i)) | 0
   return (h >>> 0).toString(36)
+}
+
+// Which demo teaches which concept — completing (stepping to the end of) one of
+// these awards its concept badge. Keys are DEMO_EXAMPLES ids.
+const CONCEPT_BY_EXAMPLE: Record<string, string> = {
+  recursion: 'recursion',
+  closure: 'closures',
+  'event-loop': 'event-loop',
+  classes: 'oop',
+  'bubble-sort': 'sorting',
+}
+
+function todayUTC(): string {
+  return new Date().toISOString().slice(0, 10)
 }
 
 type PanelView =
@@ -137,12 +165,16 @@ const BLANK_CODE = `// Write your JavaScript here, then press Run.
 
 `
 
-function safeInterpret(source: string): { trace: Trace | null; error: string | null } {
+function safeInterpret(source: string): { trace: Trace | null; error: string | null; errorLine: number | null } {
   try {
     const trace = interpret(source, { maxSteps: 2000 })
-    return { trace, error: null }
+    return { trace, error: null, errorLine: null }
   } catch (e) {
-    return { trace: null, error: e instanceof Error ? e.message : String(e) }
+    return {
+      trace: null,
+      error: e instanceof Error ? e.message : String(e),
+      errorLine: e instanceof RuntimeError ? e.line : null,
+    }
   }
 }
 
@@ -151,7 +183,44 @@ export default function Home() {
   const initial = useMemo(() => safeInterpret(DEMO_EXAMPLES[0].code), [])
   const [trace, setTrace] = useState<Trace | null>(initial.trace)
   const [error, setError] = useState<string | null>(initial.error)
+  const [errorLine, setErrorLine] = useState<number | null>(initial.errorLine)
   const [currentIndex, setCurrentIndex] = useState(0)
+
+  // Signed-in state gates the login-only features (AI tutor, quiz, XP). Guests
+  // keep the full visualizer; the extras show a friendly upsell instead.
+  const { data: session, isPending: sessionPending } = authClient.useSession()
+  const signedIn = Boolean(session?.user)
+
+  // AI-tutor language preference, remembered across sessions.
+  const [aiLang, setAiLang] = useState<TutorLang>('banglish')
+  useEffect(() => {
+    // Hydration-safe: localStorage is only read after mount so SSR and first
+    // client render agree.
+    /* eslint-disable react-hooks/set-state-in-effect */
+    try {
+      const saved = window.localStorage.getItem('phi-viz-ai-lang')
+      if (saved === 'banglish' || saved === 'english') setAiLang(saved)
+    } catch { /* ignore */ }
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [])
+  const changeAiLang = useCallback((l: TutorLang) => {
+    setAiLang(l)
+    try { window.localStorage.setItem('phi-viz-ai-lang', l) } catch { /* ignore */ }
+  }, [])
+
+  // One-time dismissible guest banner.
+  const [guestDismissed, setGuestDismissed] = useState(true)
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
+    try {
+      setGuestDismissed(window.localStorage.getItem('phi-viz-guest-dismissed') === '1')
+    } catch { /* ignore */ }
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [])
+  const dismissGuestBanner = useCallback(() => {
+    setGuestDismissed(true)
+    try { window.localStorage.setItem('phi-viz-guest-dismissed', '1') } catch { /* ignore */ }
+  }, [])
   const [isPlaying, setIsPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
   const [activeExampleId, setActiveExampleId] = useState(DEMO_EXAMPLES[0].id)
@@ -174,9 +243,10 @@ export default function Home() {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const runQuiet = useCallback((source: string) => {
-    const { trace: t, error: err } = safeInterpret(source)
+    const { trace: t, error: err, errorLine: line } = safeInterpret(source)
     setTrace(t)
     setError(err)
+    setErrorLine(line)
     setCurrentIndex(0)
     setIsPlaying(false)
     setActiveQuestion(null)
@@ -184,9 +254,10 @@ export default function Home() {
   }, [])
 
   const runAndPlay = useCallback((source: string) => {
-    const { trace: t, error: err } = safeInterpret(source)
+    const { trace: t, error: err, errorLine: line } = safeInterpret(source)
     setTrace(t)
     setError(err)
+    setErrorLine(line)
     setCurrentIndex(0)
     setActiveQuestion(null)
     answeredRef.current = new Set()
@@ -219,10 +290,14 @@ export default function Home() {
   const totalSteps = trace?.steps.length ?? 0
   const lastIndex = totalSteps - 1
 
-  // Fire confetti when a quiz run finishes on a hot streak.
+  // Fire confetti when a quiz run finishes on a hot streak — unless the learner
+  // prefers reduced motion or has turned on calm mode, in which case we stay
+  // quiet.
   const celebrate = useCallback(() => {
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+    if (settings.calmMode) return
     confetti({ particleCount: 90, spread: 70, origin: { y: 0.6 } })
-  }, [])
+  }, [settings.calmMode])
 
   // Central "move forward" that respects quiz mode: if the next step is
   // quizzable and unanswered, ask before revealing it.
@@ -252,14 +327,42 @@ export default function Home() {
     advanceRef.current = advance
   })
 
-  // Auto-advance while playing.
+  // Auto-advance while playing. Key moments (entering a function, resolving a
+  // condition) get a little extra dwell at normal speed so the learner can
+  // absorb them before the next step — a calmer, more readable pace.
   useEffect(() => {
     if (!isPlaying || !trace) return
-    timerRef.current = setTimeout(() => advanceRef.current(), 700 / speed)
+    const kind = trace.steps[currentIndex]?.kind
+    const dwell = speed <= 1 && (kind === 'enter' || kind === 'condition') ? 1.7 : 1
+    const calm = settings.calmMode ? 1.6 : 1
+    timerRef.current = setTimeout(() => advanceRef.current(), (700 * dwell * calm) / speed)
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current)
     }
-  }, [isPlaying, currentIndex, speed, trace])
+  }, [isPlaying, currentIndex, speed, trace, settings.calmMode])
+
+  // Ambient audio: one soft blip per step, a warm chime at the end. Opt-in and
+  // synthesised on the fly (see lib/visualizer/sound). The AudioContext stays
+  // suspended until a user gesture, so nothing plays before the learner acts.
+  useEffect(() => {
+    if (!settings.ambientSound || !trace) return
+    const s = trace.steps[currentIndex]
+    if (!s) return
+    if (currentIndex === lastIndex) playFinishSound()
+    else playStepSound(s.kind)
+  }, [currentIndex, settings.ambientSound, trace, lastIndex])
+
+  // Concept mastery: stepping a concept demo all the way to its final step earns
+  // that concept's badge. Idempotent per concept (ref guards the session, the
+  // server guards forever via sourceId).
+  const conceptAwardedRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (!signedIn || !trace || lastIndex <= 0 || currentIndex !== lastIndex) return
+    const concept = CONCEPT_BY_EXAMPLE[activeExampleId]
+    if (!concept || conceptAwardedRef.current.has(concept)) return
+    conceptAwardedRef.current.add(concept)
+    void awardXp('viz_concept', `concept:${concept}`, { concept })
+  }, [currentIndex, lastIndex, signedIn, trace, activeExampleId])
 
   useEffect(() => {
     return () => {
@@ -291,6 +394,44 @@ export default function Home() {
 
   const currentStep: Step | undefined = trace?.steps[currentIndex]
   const previousStep: Step | undefined = trace?.steps[currentIndex - 1]
+
+  // Guests can't use quiz mode (XP needs an account) — turn it off if the
+  // session flips to signed-out while quiz was on.
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
+    if (!signedIn && quizMode) {
+      setQuizMode(false)
+      setActiveQuestion(null)
+    }
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [signedIn, quizMode])
+
+  // Lazily build the AI-tutor request for the current step (primitive locals of
+  // the innermost frame give the model concrete values to talk about).
+  const buildStepRequest = useCallback((): TutorRequest => {
+    const top = currentStep?.frames[currentStep.frames.length - 1]
+    const vars = top?.vars
+      .filter((v) => !v.closure && v.value.t === 'prim')
+      .map((v) => {
+        const p = v.value.t === 'prim' ? v.value.v : undefined
+        const s = p === null ? 'null' : p === undefined ? 'undefined' : typeof p === 'string' ? `"${p}"` : String(p)
+        return `${v.name} = ${s}`
+      })
+      .slice(0, 10)
+      .join(', ')
+    return {
+      mode: 'step',
+      code,
+      step: {
+        description: currentStep?.description,
+        kind: currentStep?.kind,
+        line: currentStep?.line,
+        vars,
+      },
+    }
+  }, [code, currentStep])
+
+  const buildErrorRequest = useCallback((): TutorRequest => ({ mode: 'error', code, error: error ?? '' }), [code, error])
 
   const heap = useMemo(() => heapMap(currentStep?.heap ?? []), [currentStep])
 
@@ -419,8 +560,9 @@ export default function Home() {
       callLine: currentStep.callLine,
       ghostText: ghostParts.length > 0 ? ghostParts.slice(0, 6).join('  ·  ') : undefined,
       signatureText: signature,
+      dimInactive: settings.focusDim && isPlaying,
     }
-  }, [currentStep])
+  }, [currentStep, settings.focusDim, isPlaying])
 
   const handleExampleClick = (ex: typeof DEMO_EXAMPLES[number]) => {
     setActiveExampleId(ex.id)
@@ -435,8 +577,190 @@ export default function Home() {
   }
 
   const handleRunClick = useCallback(() => {
+    // Unlock the audio context inside this click so the first step's blip isn't
+    // swallowed by the browser autoplay policy.
+    if (settings.ambientSound) unlockAudio()
+    // Daily practice XP — idempotent per calendar day on the server.
+    if (signedIn) void awardXp('viz_daily', todayUTC())
     runAndPlay(code)
-  }, [code, runAndPlay])
+  }, [code, runAndPlay, settings.ambientSound, signedIn])
+
+  // Load an AI-generated challenge program into the editor and run it.
+  const handleUseChallenge = useCallback((newCode: string) => {
+    setActiveExampleId('')
+    setCode(newCode)
+    runAndPlay(newCode)
+  }, [runAndPlay])
+
+  // ---- Challenge Mode ----
+  const { xp: userXp } = useXp()
+  const [challengePhase, setChallengePhase] = useState<'off' | 'setup' | 'arena'>('off')
+  const [challenge, setChallenge] = useState<ActiveChallenge | null>(null)
+  const [challengeResult, setChallengeResult] = useState<SubmitResult | null>(null)
+  const [challengeBusy, setChallengeBusy] = useState(false)
+  const [challengeDifficulty, setChallengeDifficulty] = useState<Difficulty>('easy')
+  const [challengeMode, setChallengeMode] = useState<Mode>('oneshot')
+  const [challengeSource, setChallengeSource] = useState<ChallengeSource>('code')
+  const [challengeTopics, setChallengeTopics] = useState<ChallengeTopic[]>([])
+  const challengeActive = challengePhase === 'arena'
+  const hasRealCode = code.replace(/\/\/.*$/gm, '').trim().length > 0
+
+  // Remember the last topic selection across sessions.
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
+    try {
+      const t = window.localStorage.getItem('phi-viz-ch-topics')
+      if (t) { const arr = JSON.parse(t); if (Array.isArray(arr)) setChallengeTopics(arr.filter(isTopic)) }
+    } catch { /* ignore */ }
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [])
+  useEffect(() => {
+    try { window.localStorage.setItem('phi-viz-ch-topics', JSON.stringify(challengeTopics)) } catch { /* ignore */ }
+  }, [challengeTopics])
+
+  // Hint state (one per round).
+  const [challengeHint, setChallengeHint] = useState<string | null>(null)
+  const [hintBusy, setHintBusy] = useState(false)
+  const [hintUsed, setHintUsed] = useState(false)
+
+  // Leaderboard dialog.
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false)
+
+  // AI-charge confirm. Remembered "don't show again" in localStorage.
+  const [aiChargeAck, setAiChargeAck] = useState(false)
+  const [aiChargeOpen, setAiChargeOpen] = useState(false)
+  const aiResolveRef = useRef<((v: boolean) => void) | null>(null)
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
+    try { if (window.localStorage.getItem('phi-viz-ai-charge-ack') === '1') setAiChargeAck(true) } catch { /* ignore */ }
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [])
+
+  // Gate every helper-AI action: block if too poor, confirm once (unless acked).
+  const requestAiCharge = useCallback(async (): Promise<boolean> => {
+    if (!signedIn) return true
+    if (userXp < 30) { toast.error('You need 30 XP for AI help'); return false }
+    if (aiChargeAck) { setTimeout(() => void refreshXp(), 2500); return true }
+    return new Promise<boolean>((resolve) => {
+      aiResolveRef.current = (ok: boolean) => { if (ok) setTimeout(() => void refreshXp(), 2500); resolve(ok) }
+      setAiChargeOpen(true)
+    })
+  }, [signedIn, userXp, aiChargeAck])
+
+  const buyHint = useCallback(async () => {
+    setHintBusy(true)
+    try {
+      const res = await fetch('/api/labs/js-motion/challenge/hint', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data?.message || 'Could not get a hint'); return }
+      setChallengeHint(data.hint)
+      setHintUsed(true)
+      void refreshXp()
+    } catch {
+      toast.error('Could not get a hint')
+    } finally {
+      setHintBusy(false)
+    }
+  }, [])
+
+  // Resume an in-progress challenge after a refresh.
+  useEffect(() => {
+    if (!signedIn) return
+    let alive = true
+    fetch('/api/labs/js-motion/challenge/active')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (alive && d?.active) {
+          /* eslint-disable react-hooks/set-state-in-effect */
+          setChallenge(d.active as ActiveChallenge)
+          setChallengePhase('arena')
+          setHintUsed((d.active.hintsUsed ?? 0) > 0)
+          /* eslint-enable react-hooks/set-state-in-effect */
+        }
+      })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [signedIn])
+
+  const openChallenge = useCallback(() => {
+    setChallengeResult(null)
+    // Smart default: base it on the editor's code when there is real code, else topics.
+    setChallengeSource(code.replace(/\/\/.*$/gm, '').trim() ? 'code' : 'topics')
+    setChallengePhase('setup')
+  }, [code])
+  const closeChallenge = useCallback(() => { setChallengePhase('off'); setChallenge(null); setChallengeResult(null) }, [])
+
+  const activateChallenge = useCallback(async () => {
+    setChallengeBusy(true)
+    try {
+      const res = await fetch('/api/labs/js-motion/challenge/activate', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ difficulty: challengeDifficulty, mode: challengeMode, source: challengeSource, topics: challengeTopics, code }),
+      })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data?.message || 'Could not start the challenge'); return }
+      const ch = data as ActiveChallenge
+      setChallenge(ch)
+      setChallengePhase('arena')
+      setChallengeResult(null)
+      setChallengeHint(null)
+      setHintUsed(false)
+      setActiveExampleId('')
+      const header = ch.signature ? `function ${ch.signature} {` : `function ${ch.fnName}() {`
+      const stub = `// Write your solution. It must return its result.\n${header}\n  \n}\n`
+      setCode(stub)
+      runQuiet(stub)
+      void refreshXp()
+    } catch {
+      toast.error('Could not start the challenge')
+    } finally {
+      setChallengeBusy(false)
+    }
+  }, [challengeDifficulty, challengeMode, challengeSource, challengeTopics, code, runQuiet])
+
+  const submitChallenge = useCallback(async () => {
+    if (!challenge) return
+    setChallengeBusy(true)
+    try {
+      const res = await fetch('/api/labs/js-motion/challenge/submit', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ attemptId: challenge.attemptId, code }),
+      })
+      const data = (await res.json()) as SubmitResult & { message?: string }
+      if (!res.ok) { toast.error(data?.message || 'Submit failed'); return }
+      void refreshXp()
+      setChallengeResult(data)
+      if (data.status === 'active') {
+        setChallenge((c) => (c ? { ...c, attemptsUsed: c.attemptsUsed + 1 } : c))
+      } else if (data.status === 'won') {
+        if (typeof window === 'undefined' || !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+          confetti({ particleCount: 140, spread: 80, origin: { y: 0.6 }, startVelocity: 48 })
+        }
+      }
+    } catch {
+      toast.error('Submit failed')
+    } finally {
+      setChallengeBusy(false)
+    }
+  }, [challenge, code])
+
+  const giveUpChallenge = useCallback(async () => {
+    if (!challenge) return
+    setChallengeBusy(true)
+    try {
+      const res = await fetch('/api/labs/js-motion/challenge/giveup', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ attemptId: challenge.attemptId }),
+      })
+      const data = await res.json()
+      void refreshXp()
+      setChallengeResult({ status: 'lost', passed: 0, total: 0, xpDelta: 0, balance: data?.balance ?? userXp, reason: 'giveup' })
+    } catch {
+      toast.error('Could not give up')
+    } finally {
+      setChallengeBusy(false)
+    }
+  }, [challenge, userXp])
 
   const toggleBreakpoint = useCallback((line: number) => {
     setBreakpoints((prev) => {
@@ -528,6 +852,19 @@ export default function Home() {
                   <span className="text-[10px] text-amber-800 dark:text-amber-300 font-mono">
                     iter #{currentStep.iteration}
                   </span>
+                )}
+                {settings.aiTutor && !sessionPending && !challengeActive && (
+                  <div className="ml-auto">
+                    <AiTutor
+                      getRequest={buildStepRequest}
+                      resetKey={currentIndex}
+                      lang={aiLang}
+                      onLangChange={changeAiLang}
+                      locked={!signedIn}
+                      variant="why"
+                      onBeforeAi={requestAiCharge}
+                    />
+                  </div>
                 )}
               </div>
               {currentStep.exprTrail && currentStep.exprTrail.length > 1 ? (
@@ -765,8 +1102,32 @@ export default function Home() {
   ) : null
 
   return (
-    <div className="h-screen flex flex-col bg-linear-to-br from-slate-50 via-white to-slate-100 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-950 overflow-hidden">
+    <div className={cn(
+      'relative h-screen flex flex-col overflow-hidden transition-colors',
+      challengeActive
+        ? 'bg-linear-to-br from-rose-100 via-orange-50 to-rose-100 dark:from-rose-950 dark:via-zinc-950 dark:to-orange-950 ring-4 ring-inset ring-rose-500/40'
+        : 'bg-linear-to-br from-slate-50 via-white to-slate-100 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-950',
+    )}>
       <Toaster position="top-center" />
+      {challengeResult && challengeResult.status !== 'active' && (
+        <ChallengeResult
+          result={challengeResult}
+          stake={challenge?.stake ?? 0}
+          onNew={() => { setChallengeResult(null); setChallenge(null); setChallengeHint(null); setHintUsed(false); setChallengePhase('setup') }}
+          onExit={closeChallenge}
+        />
+      )}
+      <LeaderboardDialog open={leaderboardOpen} onOpenChange={setLeaderboardOpen} />
+      <AiChargeDialog
+        open={aiChargeOpen}
+        balance={userXp}
+        onConfirm={(dontShow) => {
+          setAiChargeOpen(false)
+          if (dontShow) { setAiChargeAck(true); try { window.localStorage.setItem('phi-viz-ai-charge-ack', '1') } catch { /* ignore */ } }
+          aiResolveRef.current?.(true); aiResolveRef.current = null
+        }}
+        onCancel={() => { setAiChargeOpen(false); aiResolveRef.current?.(false); aiResolveRef.current = null }}
+      />
       {floating && (
         <FloatingWindow title="Visual panel" onDock={() => setFloating(false)}>
           {visualPanel}
@@ -784,11 +1145,22 @@ export default function Home() {
             </div>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <label className="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer mr-1">
-              <GraduationCap className="h-4 w-4" />
-              Quiz
-              <Switch checked={quizMode} onCheckedChange={(v) => { setQuizMode(v); if (!v) setActiveQuestion(null); setStreak(0) }} size="sm" />
-            </label>
+            {signedIn ? (
+              <label className="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer mr-1">
+                <GraduationCap className="h-4 w-4" />
+                Quiz
+                <Switch checked={quizMode} onCheckedChange={(v) => { setQuizMode(v); if (!v) setActiveQuestion(null); setStreak(0) }} size="sm" />
+              </label>
+            ) : !sessionPending && (
+              <Link
+                href="/sign-in?next=/labs/js-motion"
+                title="Sign in to unlock quizzes & XP"
+                className="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mr-1"
+              >
+                <Lock className="h-3.5 w-3.5" />
+                Quiz
+              </Link>
+            )}
             <SettingsPanel
               settings={settings}
               onToggle={setFeature}
@@ -796,8 +1168,12 @@ export default function Home() {
               enabledCount={enabledCount}
             />
             <AnimatedThemeToggler />
-            <XpHint />
-            <XpBadge />
+            {signedIn && (
+              <>
+                <XpHint />
+                <XpBadge />
+              </>
+            )}
             <Button variant="secondary" className="hidden sm:flex rounded-full">
               <Cpu className="mr-1" />
               {trace ? `${trace.steps.length} steps` : '— steps'}
@@ -810,6 +1186,18 @@ export default function Home() {
               <FilePlus2 className="h-4 w-4 mr-1" />
               New
             </Button>
+            {signedIn && !challengeActive && (
+              <Button variant="outline" size="sm" onClick={() => setLeaderboardOpen(true)} title="Weekly leaderboard" className="hidden sm:flex">
+                <Trophy className="h-4 w-4 sm:mr-1 text-amber-500" />
+                <span className="hidden md:inline">Ranks</span>
+              </Button>
+            )}
+            {challengePhase === 'off' && !sessionPending && (
+              <Button variant="outline" size="sm" onClick={openChallenge} title="Stake XP and take an AI coding challenge" className="border-rose-400/60 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10">
+                <Swords className="h-4 w-4 mr-1" />
+                Challenge
+              </Button>
+            )}
             <Button variant="default" className='bg-linear-to-r from-pink-500 to-red-500' size="sm" onClick={handleRunClick}>
               <Play className="h-4 w-4 mr-1" />
               Run
@@ -819,9 +1207,65 @@ export default function Home() {
         </div>
       </header>
 
+      {!signedIn && !sessionPending && !guestDismissed && (
+        <div className="shrink-0 border-b border-violet-500/20 bg-linear-to-r from-violet-500/10 via-fuchsia-500/10 to-transparent">
+          <div className="px-4 py-2 flex items-center gap-3">
+            <Sparkles className="h-4 w-4 text-violet-500 shrink-0" />
+            <p className="text-xs text-foreground/80 leading-snug">
+              You&apos;re exploring as a guest — everything here is open. <strong className="text-foreground">Sign in free</strong> to also unlock the AI tutor, quizzes and XP. No pressure!
+            </p>
+            <Link
+              href="/sign-in?next=/labs/js-motion"
+              className="ml-auto shrink-0 rounded-full bg-linear-to-r from-violet-500 to-fuchsia-600 px-3 py-1 text-xs font-semibold text-white hover:opacity-90"
+            >
+              Sign in
+            </Link>
+            <button
+              onClick={dismissGuestBanner}
+              title="Continue as guest"
+              className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <XIcon className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       <main className="flex-1 min-h-0 p-3">
         <ResizablePanelGroup orientation="horizontal" className="h-full gap-3">
           <ResizablePanel defaultSize={18} minSize={14} className="min-w-0">
+            {challengePhase === 'setup' ? (
+              <ChallengeSetup
+                xp={userXp}
+                locked={!signedIn}
+                busy={challengeBusy}
+                hasCode={hasRealCode}
+                difficulty={challengeDifficulty}
+                mode={challengeMode}
+                source={challengeSource}
+                topics={challengeTopics}
+                onChange={(n) => {
+                  if (n.difficulty) setChallengeDifficulty(n.difficulty)
+                  if (n.mode) setChallengeMode(n.mode)
+                  if (n.source) setChallengeSource(n.source)
+                  if (n.topics) setChallengeTopics(n.topics)
+                }}
+                onActivate={activateChallenge}
+                onClose={closeChallenge}
+              />
+            ) : challengePhase === 'arena' && challenge ? (
+              <ChallengeArena
+                challenge={challenge}
+                busy={challengeBusy}
+                lastResult={challengeResult && challengeResult.status === 'active' ? challengeResult : null}
+                hint={challengeHint}
+                hintBusy={hintBusy}
+                hintUsed={hintUsed}
+                onHint={buyHint}
+                onSubmit={submitChallenge}
+                onGiveUp={giveUpChallenge}
+              />
+            ) : (
             <aside className="h-full flex flex-col min-h-0 rounded-xl border-2 border-border bg-card overflow-hidden">
               <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/50 shrink-0">
                 <Lightbulb className="h-4 w-4 text-muted-foreground" />
@@ -853,48 +1297,13 @@ export default function Home() {
                 </div>
               </div>
             </aside>
+            )}
           </ResizablePanel>
 
           <ResizableHandle withHandle />
 
           <ResizablePanel defaultSize={82} minSize={60} className="min-w-0">
             <div className="h-full flex flex-col gap-3 min-h-0">
-              {error && (
-                <div className="flex items-start gap-2 p-2.5 rounded-lg border-2 border-rose-300 bg-rose-50 dark:bg-rose-950/40 text-rose-900 dark:text-rose-200 text-sm shrink-0">
-                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                  <div className="min-w-0">
-                    <div className="font-semibold">Could not run this code</div>
-                    <div className="font-mono text-xs mt-1 wrap-break-word">{error}</div>
-                  </div>
-                </div>
-              )}
-
-              {!error && trace?.truncated && (
-                <div className="flex items-start gap-2 p-2.5 rounded-lg border-2 border-amber-300 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 text-sm shrink-0">
-                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                  <div className="min-w-0">
-                    <div className="font-semibold">Stopped early — possible infinite loop</div>
-                    <div className="text-xs mt-1 wrap-break-word">
-                      {trace.stopReason} Showing the first {trace.steps.length - 1} steps so you can see what happened.
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {!error && !trace?.truncated && trace?.warnings && trace.warnings.length > 0 && (
-                <div className="flex items-start gap-2 p-2.5 rounded-lg border border-amber-300/70 bg-amber-50/60 dark:bg-amber-950/25 text-amber-800 dark:text-amber-300 text-xs shrink-0">
-                  <Lightbulb className="h-4 w-4 mt-0.5 shrink-0" />
-                  <div className="min-w-0">
-                    <div className="font-semibold">Heads up</div>
-                    <ul className="mt-1 list-disc pl-4 space-y-0.5">
-                      {trace.warnings.map((w, i) => (
-                        <li key={i} className="wrap-break-word">{w}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              )}
-
               <div className="flex-1 min-h-0">
                 <ResizablePanelGroup orientation="horizontal" className="h-full gap-3">
                   <ResizablePanel defaultSize={50} minSize={25} className="min-w-0">
@@ -906,6 +1315,18 @@ export default function Home() {
                           {isPlaying ? 'read-only · playing' : '⌘/Ctrl+Enter to run · click gutter for breakpoints'}
                         </span>
                       </div>
+                      {settings.aiTutor && !sessionPending && !challengeActive && (
+                        <div className="flex items-center gap-1.5 px-2 py-1 border-b bg-background/60 shrink-0 overflow-x-auto">
+                          <AiInsights
+                            code={code}
+                            lang={aiLang}
+                            onLangChange={changeAiLang}
+                            locked={!signedIn}
+                            onUseChallenge={handleUseChallenge}
+                            onBeforeAi={requestAiCharge}
+                          />
+                        </div>
+                      )}
                       <div className="flex-1 min-h-0 overflow-hidden">
                         <CodeEditor
                           value={code}
@@ -915,6 +1336,7 @@ export default function Home() {
                           breakpoints={breakpoints}
                           onToggleBreakpoint={toggleBreakpoint}
                           readOnly={isPlaying}
+                          errorLine={errorLine}
                         />
                       </div>
                       {settings.complexityMeter && currentLoop && (
@@ -922,6 +1344,60 @@ export default function Home() {
                           <ComplexityMeter loop={currentLoop} currentIndex={currentIndex} />
                         </div>
                       )}
+                      {/* Notices overlay the editor bottom so they never reflow the
+                          surrounding panels when they appear or disappear. */}
+                      <div className="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex flex-col gap-2">
+                        {error && (
+                          <div className="pointer-events-auto flex items-start gap-2 p-2.5 rounded-lg border-2 border-rose-300 bg-rose-50/95 dark:bg-rose-950/90 backdrop-blur-sm text-rose-900 dark:text-rose-200 text-sm shadow-lg max-h-40 overflow-y-auto">
+                            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold">Could not run this code</span>
+                                {settings.aiTutor && !sessionPending && !challengeActive && (
+                                  <div className="ml-auto shrink-0">
+                                    <AiTutor
+                                      getRequest={buildErrorRequest}
+                                      resetKey={error}
+                                      lang={aiLang}
+                                      onLangChange={changeAiLang}
+                                      locked={!signedIn}
+                                      variant="fix"
+                                      onBeforeAi={requestAiCharge}
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                              <div className="font-mono text-xs mt-1 wrap-break-word">{error}</div>
+                            </div>
+                          </div>
+                        )}
+
+                        {!error && trace?.truncated && (
+                          <div className="pointer-events-auto flex items-start gap-2 p-2.5 rounded-lg border-2 border-amber-300 bg-amber-50/95 dark:bg-amber-950/90 backdrop-blur-sm text-amber-900 dark:text-amber-200 text-sm shadow-lg max-h-40 overflow-y-auto">
+                            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                            <div className="min-w-0">
+                              <div className="font-semibold">Stopped early — possible infinite loop</div>
+                              <div className="text-xs mt-1 wrap-break-word">
+                                {trace.stopReason} Showing the first {trace.steps.length - 1} steps so you can see what happened.
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {!error && !trace?.truncated && trace?.warnings && trace.warnings.length > 0 && (
+                          <div className="pointer-events-auto flex items-start gap-2 p-2.5 rounded-lg border border-amber-300/70 bg-amber-50/95 dark:bg-amber-950/90 backdrop-blur-sm text-amber-800 dark:text-amber-300 text-xs shadow-lg max-h-40 overflow-y-auto">
+                            <Lightbulb className="h-4 w-4 mt-0.5 shrink-0" />
+                            <div className="min-w-0">
+                              <div className="font-semibold">Heads up</div>
+                              <ul className="mt-1 list-disc pl-4 space-y-0.5">
+                                {trace.warnings.map((w, i) => (
+                                  <li key={i} className="wrap-break-word">{w}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </section>
                   </ResizablePanel>
 
@@ -975,6 +1451,7 @@ export default function Home() {
           isPlaying={isPlaying}
           onPlayPause={() => {
             if (!trace || trace.steps.length === 0) return
+            if (settings.ambientSound) unlockAudio()
             if (currentIndex >= lastIndex) setCurrentIndex(0)
             setIsPlaying((p) => !p)
           }}

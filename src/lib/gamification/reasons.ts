@@ -8,7 +8,13 @@ export interface ClientAwardRequest {
   sourceId: string
   /** Optional context the server uses to size/record the award. */
   streak?: number
+  /** For viz_concept: which concept the learner just completed. */
+  concept?: string
 }
+
+// Concepts the JS Motion visualizer can credit as "mastered" (one demo each).
+// Kept here so the award route can reject anything a client makes up.
+export const VIZ_CONCEPTS = ['recursion', 'closures', 'event-loop', 'oop', 'sorting'] as const
 
 interface Resolved {
   amount: number
@@ -29,6 +35,16 @@ export function resolveClientAward(req: ClientAwardRequest): Resolved | null {
       if (streak >= 10) amount += 10
       else if (streak >= 5) amount += 5
       return { amount, meta: { streak } }
+    }
+    // A small daily grant for opening the visualizer and running code. sourceId
+    // is the calendar day, so it's idempotent — once per day, not per run.
+    case 'viz_daily':
+      return { amount: 5 }
+    // Completing a concept demo (stepping it to the end). Idempotent per concept
+    // via sourceId; the concept is validated against the known list.
+    case 'viz_concept': {
+      if (!req.concept || !(VIZ_CONCEPTS as readonly string[]).includes(req.concept)) return null
+      return { amount: 15, meta: { concept: req.concept } }
     }
     default:
       return null

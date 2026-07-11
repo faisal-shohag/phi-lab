@@ -59,6 +59,7 @@ model User {
   support       SupportSession[]
   xpEvents      XpEvent[]
   badges        UserBadge[]
+  challengeAttempts ChallengeAttempt[]
   hivePosts         HivePost[]         @relation("PostAuthor")
   assignedHivePosts HivePost[]         @relation("PostMentor")
   hiveReplies       HiveReply[]
@@ -69,6 +70,37 @@ model User {
   @@unique([email])
   @@index([suspendedAt])
   @@map("user")
+}
+
+// A staked JS Motion coding challenge. The tests + expected outputs live ONLY
+// here (server-side) so a submission is graded against hidden inputs the learner
+// never sees. Mutable per-round state (attemptsUsed, status, expiresAt) is why
+// this can't just be an append-only XpEvent.
+model ChallengeAttempt {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  difficulty   String    // easy | medium | hard
+  mode         String    // oneshot | retries | timed
+  stake        Int
+  status       String    @default("active") // active | won | lost
+  fnName       String
+  prompt       String                 // Bengali task text (shown to the learner)
+  sampleInput  Json                   // one visible example input (shown)
+  sampleOutput String                 // its output (shown)
+  tests        Json                   // SERVER-ONLY: [{ args: [...], expected: string }]
+  referenceSolution String?           // SERVER-ONLY until won; then revealed to the winner
+  attemptsUsed Int       @default(0)
+  maxAttempts  Int                    // oneshot=1, timed=3, retries=9999
+  hintsUsed    Int       @default(0)
+  expiresAt    DateTime?              // timed mode only
+  wonXp        Int?                   // XP credited on win (base × streak multiplier)
+  winStreak    Int?                   // consecutive-win streak at the moment of this win
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([userId, status])
+  @@map("challenge_attempt")
 }
 
 // Append-only ledger of every XP grant. `reason` + `sourceId` are unique per
@@ -476,6 +508,7 @@ enum AiFeature {
   ENGLISH
   SUPPORT
   ANALOGIES
+  JS_MOTION
 }
 
 /** Which job the model was doing. Cost and failure rates differ wildly per task. */
@@ -492,6 +525,8 @@ enum AiTask {
   REPORT
   /** Analogies: one-shot card generation. */
   GENERATE
+  /** JS Motion: explain a step or an error to the learner. */
+  EXPLAIN
 }
 
 /** Coarse bucket for dashboards; `errorMessage` keeps the detail. */

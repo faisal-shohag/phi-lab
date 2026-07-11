@@ -23,15 +23,17 @@
 import { extractJson, toJsonSchema, requireAllProperties } from './schema'
 import { recordAiUsage, type AiCallContext, type TokenUsage } from './usage'
 import { getSettings } from '@/lib/admin/settings'
-import type { AiErrorKind, AiProvider } from '@/generated/prisma/client'
+import type { AiErrorKind, AiFeature, AiProvider } from '@/generated/prisma/client'
 
 export type ProviderId = 'gemini' | 'ollama' | 'groq'
 
 /**
- * Everything a usage row needs except `feature` — this module only ever serves
- * Hive, so it stamps that itself rather than making every ai.ts caller repeat it.
+ * Everything a usage row needs. `feature` is optional and defaults to HIVE —
+ * this engine grew up serving Hive, but the JS Motion tutor now borrows its
+ * failover machinery, so a caller can override the feature it's stamped under
+ * to keep the admin dashboard's per-feature breakdown honest.
  */
-export type HiveCallContext = Omit<AiCallContext, 'feature'>
+export type HiveCallContext = Omit<AiCallContext, 'feature'> & { feature?: AiFeature }
 
 /** ProviderId (internal, lowercase) → the Prisma enum stored on rows. */
 export const PROVIDER_ENUM: Record<ProviderId, AiProvider> = {

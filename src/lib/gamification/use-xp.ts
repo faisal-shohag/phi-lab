@@ -78,7 +78,7 @@ export interface AwardResponse {
  * Grant a client-triggered award. Updates the shared snapshot optimistically
  * from the server response and fires celebrations for level-ups / new badges.
  */
-export async function award(reason: string, sourceId: string, extra?: { streak?: number }): Promise<AwardResponse | null> {
+export async function award(reason: string, sourceId: string, extra?: { streak?: number; concept?: string }): Promise<AwardResponse | null> {
   try {
     const res = await fetch('/api/xp/award', {
       method: 'POST',

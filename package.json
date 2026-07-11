@@ -7,7 +7,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -35,6 +37,7 @@
     "next": "16.2.10",
     "next-themes": "^0.4.6",
     "prismjs": "^1.30.0",
+    "qrcode": "^1.5.4",
     "radix-ui": "^1.6.1",
     "react": "19.2.4",
     "react-day-picker": "^10.0.1",
@@ -55,6 +58,7 @@
     "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^20",
     "@types/prismjs": "^1.26.6",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
@@ -64,6 +68,7 @@
     "prisma": "^7.8.0",
     "shadcn": "^4.13.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }
