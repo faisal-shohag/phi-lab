@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/labs/cleanup",
-      "schedule": "30 * * * *"
+      "schedule": "30 3 * * *"
     }
   ]
 }
