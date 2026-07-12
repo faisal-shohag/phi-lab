@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from '@google/genai'
+import { Type } from '@google/genai'
 import type { AnalogyCardData, AnalogyLanguage } from '@/lib/analogies/concepts'
 import { requireUser } from '@/lib/auth-server'
 import { errorResponse } from '@/lib/interview/errors'
@@ -6,14 +6,14 @@ import { prisma } from '@/lib/prisma'
 import { awardXp } from '@/lib/gamification/award'
 import { getSetting } from '@/lib/admin/settings'
 import { isSuspended } from '@/lib/admin/suspension'
-import { recordAiUsage } from '@/lib/ai-usage/record'
-import { normalizeTokens } from '@/lib/ai-usage/tokens'
+import { generateStructured } from '@/lib/hive/providers'
 
 // Generates a culturally-native "rickshaw" analogy for a concept and saves it as
 // a shareable card. Uses a standard text model with a responseSchema so the card
 // always has the fields the UI needs.
-
-const MODEL = 'gemini-3.1-flash-lite'
+//
+// Goes through the shared failover engine (src/lib/hive/providers.ts): it rotates
+// across every Gemini key, falls back to Ollama/Groq, and writes the usage rows.
 
 function startOfTodayUTC(): Date {
   const d = new Date()
@@ -53,9 +53,6 @@ function langInstruction(language: AnalogyLanguage): string {
 }
 
 export async function POST(request: Request) {
-  const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) return errorResponse('SERVER_ERROR', 'GEMINI_API_KEY is not configured on the server.')
-
   const user = await requireUser()
   if (!user) return errorResponse('AUTH_REQUIRED')
 
@@ -84,56 +81,17 @@ export async function POST(request: Request) {
     langInstruction(language),
   ].join('\n')
 
-  // Telemetry context shared by the success and failure paths below. Analogies
-  // have no session row, so sessionId stays null.
-  const startedAt = Date.now()
-  const usageBase = {
-    feature: 'ANALOGIES',
-    task: 'GENERATE',
-    provider: 'GEMINI',
-    model: MODEL,
-    tryIndex: 1,
-    userId: user.id,
-  } as const
-
+  // Analogies have no session row, so sessionId stays null. The engine records
+  // one usage row per attempt and fails over on its own.
   let card: Omit<AnalogyCardData, 'concept' | 'language' | 'id'>
   try {
-    const ai = new GoogleGenAI({ apiKey })
-    const response = await ai.models.generateContent({
-      model: MODEL,
-      contents: prompt,
-      config: { responseMimeType: 'application/json', responseSchema: SCHEMA },
-    })
-    const text = response.text
-    if (!text) {
-      void recordAiUsage({
-        ...usageBase,
-        success: false,
-        latencyMs: Date.now() - startedAt,
-        tokens: normalizeTokens(response.usageMetadata),
-        errorKind: 'TRUNCATED',
-        errorMessage: 'the model returned an empty analogy',
-      })
-      return errorResponse('SERVER_ERROR', 'The model returned an empty analogy.')
-    }
-
-    card = JSON.parse(text)
-
-    void recordAiUsage({
-      ...usageBase,
-      success: true,
-      latencyMs: Date.now() - startedAt,
-      tokens: normalizeTokens(response.usageMetadata),
+    card = await generateStructured<Omit<AnalogyCardData, 'concept' | 'language' | 'id'>>(prompt, SCHEMA, {
+      feature: 'ANALOGIES',
+      task: 'GENERATE',
+      userId: user.id,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
-    void recordAiUsage({
-      ...usageBase,
-      success: false,
-      latencyMs: Date.now() - startedAt,
-      errorKind: err instanceof SyntaxError ? 'INVALID_JSON' : 'UNKNOWN',
-      errorMessage: message,
-    })
     return errorResponse('SERVER_ERROR', `Failed to generate analogy: ${message}`)
   }
 

@@ -53,7 +53,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
     }
   }
 
-  const otherHref = `/${isSignUp ? 'sign-in' : 'sign-up'}?redirect=${encodeURIComponent(redirect)}`
+  const otherHref = `/${isSignUp ? 'sign-in' : 'sign-up'}}`
 
   return (
     <motion.div

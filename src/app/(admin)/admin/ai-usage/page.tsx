@@ -1,5 +1,5 @@
-import { aiUsageSummary } from '@/lib/admin/ai-usage'
-import { providerLimits } from '@/lib/admin/provider-limits'
+import { aiUsageSummary, type KeySlice } from '@/lib/admin/ai-usage'
+import { keyLimits } from '@/lib/admin/provider-limits'
 import { dailyCaps } from '@/lib/admin/daily-caps'
 import { compactNumber, duration, fullNumber, percent, relativeTime } from '@/lib/admin/format'
 import { UsageTrendChart } from '@/components/admin/usage-trend-chart'
@@ -17,6 +17,55 @@ function parseDays(value: string | undefined): number {
   return RANGES.includes(n as (typeof RANGES)[number]) ? n : 30
 }
 
+/**
+ * Per-key burn for one lane. Live and text get their own table rather than one
+ * merged one: a live "call" is a whole voice round with browser-reported tokens,
+ * a text call is a single request the server watched itself. Same key, two very
+ * different units.
+ */
+function KeyUsageTable({ keys, lane }: { keys: KeySlice[]; lane: 'live' | 'text' }) {
+  if (keys.length === 0) {
+    return (
+      <p className="text-muted-foreground py-6 text-center text-sm">
+        No {lane === 'live' ? 'live voice rounds' : 'text calls'} in this window.
+      </p>
+    )
+  }
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Key</TableHead>
+            <TableHead className="text-right">{lane === 'live' ? 'Rounds' : 'Calls'}</TableHead>
+            <TableHead className="text-right">Failed</TableHead>
+            <TableHead className="text-right">{lane === 'live' ? 'Minutes' : 'Tokens'}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {keys.map((k) => (
+            <TableRow key={`${k.provider}-${k.keyId ?? 'unattributed'}`}>
+              <TableCell className="font-mono text-xs">
+                {k.keyId ?? <span className="text-muted-foreground italic">unattributed</span>}
+                <Badge variant="outline" className="ml-2 font-normal capitalize">
+                  {k.provider.toLowerCase()}
+                </Badge>
+              </TableCell>
+              <TableCell className="text-right tabular-nums">{fullNumber(k.calls)}</TableCell>
+              <TableCell className="text-right tabular-nums">
+                {k.failures ? <span className="text-destructive">{fullNumber(k.failures)}</span> : '0'}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                {lane === 'live' ? fullNumber(k.liveMinutes) : compactNumber(k.totalTokens)}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
 export default async function AiUsagePage({
   searchParams,
 }: {
@@ -26,7 +75,7 @@ export default async function AiUsagePage({
   const days = parseDays((await searchParams).days)
   const [usage, limits, caps] = await Promise.all([
     aiUsageSummary(days),
-    providerLimits(),
+    keyLimits(),
     dailyCaps(),
   ])
 
@@ -204,64 +253,116 @@ export default async function AiUsagePage({
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              Provider limits
+              Text &amp; evaluation keys
               <Tooltip>
                 <TooltipTrigger>
                   <Info className="text-muted-foreground size-3.5" />
                 </TooltipTrigger>
                 <TooltipContent className="max-w-72">
-                  Live rate-limit state, not windowed by the range above. Only Groq reports a
-                  remaining-requests count; Gemini and Ollama send no such header. Every value is
-                  last-observed — it moves only when a provider is called or rate limited.
+                  Everything except live voice: Hive answers, the JS Motion tutor, and the lab report
+                  graders. These rotate across every key of every provider, so an even spread here is
+                  the rotation working.
                 </TooltipContent>
               </Tooltip>
             </CardTitle>
-            <CardDescription>Vendor quotas for the Hive failover fleet.</CardDescription>
+            <CardDescription>Which key served each structured-generation call.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <KeyUsageTable keys={usage.textKeys} lane="text" />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              Live voice keys
+              <Tooltip>
+                <TooltipTrigger>
+                  <Info className="text-muted-foreground size-3.5" />
+                </TooltipTrigger>
+                <TooltipContent className="max-w-72">
+                  Gemini Live rounds only, counted separately: one &quot;round&quot; is a whole
+                  conversation, and its tokens are reported by the browser rather than observed here.
+                  The key is the one that minted the round&apos;s ephemeral token.
+                </TooltipContent>
+              </Tooltip>
+            </CardTitle>
+            <CardDescription>Which key minted each voice round&apos;s token.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <KeyUsageTable keys={usage.liveKeys} lane="live" />
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              Key health
+              <Tooltip>
+                <TooltipTrigger>
+                  <Info className="text-muted-foreground size-3.5" />
+                </TooltipTrigger>
+                <TooltipContent className="max-w-72">
+                  Live rate-limit state per key, not windowed by the range above. Keys are discovered
+                  from the environment by name, so a new one appears here as soon as it is deployed.
+                  Only Groq reports a remaining-requests count; Gemini and Ollama send no such header.
+                  Every value is last-observed — it moves only when the key is used or rate limited.
+                </TooltipContent>
+              </Tooltip>
+            </CardTitle>
+            <CardDescription>Every API key the environment offers, and its state.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Provider</TableHead>
+                    <TableHead>Key</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Remaining</TableHead>
                     <TableHead className="text-right">Updated</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {limits.map((p) => (
-                    <TableRow key={p.provider}>
-                      <TableCell className="font-medium capitalize">{p.provider}</TableCell>
+                  {limits.map((k) => (
+                    <TableRow key={k.keyId}>
+                      <TableCell className="font-mono text-xs">
+                        {k.keyId}
+                        <Badge variant="outline" className="ml-2 font-normal capitalize">
+                          {k.provider}
+                        </Badge>
+                      </TableCell>
                       <TableCell>
-                        {!p.configured ? (
-                          <span className="text-muted-foreground">Not configured</span>
-                        ) : p.parked ? (
+                        {k.parked ? (
                           <Badge variant="destructive" className="font-normal">
-                            parked (admin)
+                            parked ({k.providerParked ? 'provider' : 'key'})
                           </Badge>
-                        ) : p.cooldownMsLeft > 0 ? (
+                        ) : k.cooldownMsLeft > 0 ? (
                           <Badge variant="destructive" className="font-normal">
-                            cooling down · {duration(p.cooldownMsLeft)}
+                            cooling down · {duration(k.cooldownMsLeft)}
                           </Badge>
+                        ) : k.updatedAt === null ? (
+                          <span className="text-muted-foreground text-xs">never used</span>
                         ) : (
                           <Badge variant="outline" className="font-normal">
                             available
                           </Badge>
                         )}
-                        {p.lastError ? (
-                          <span className="text-muted-foreground ml-2 text-xs">{p.lastError}</span>
+                        {k.lastError ? (
+                          <span className="text-muted-foreground ml-2 text-xs">{k.lastError}</span>
                         ) : null}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {p.reportsRemaining
-                          ? p.remaining !== null
-                            ? fullNumber(p.remaining)
+                        {k.reportsRemaining
+                          ? k.remaining !== null
+                            ? fullNumber(k.remaining)
                             : '—'
                           : 'n/a'}
                       </TableCell>
                       <TableCell className="text-muted-foreground text-right whitespace-nowrap text-xs">
-                        {p.updatedAt ? relativeTime(p.updatedAt) : 'never'}
+                        {k.updatedAt ? relativeTime(k.updatedAt) : 'never'}
                       </TableCell>
                     </TableRow>
                   ))}

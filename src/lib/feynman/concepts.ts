@@ -5,6 +5,7 @@
 
 import type { LanguageId } from '@/lib/interview/topics'
 import { spokenDuration } from '@/lib/labs/duration'
+import { endingInstruction } from '@/lib/labs/end-session'
 
 export interface Concept {
   id: string
@@ -83,6 +84,7 @@ export function buildTeachbackInstruction(
   lines.push(
     '',
     `The lesson lasts about ${spokenDuration(roundSeconds)}. When you are told that time is up, briefly say in one or two sentences what you learned from the teacher, thank them, and stop asking questions.`,
+    endingInstruction(roundSeconds),
     'Begin only when prompted: greet the teacher warmly in one sentence as a curious learner and ask them to start explaining.',
   )
 

@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { Activity, AlertTriangle, Coins, LifeBuoy, Sparkles, Users } from 'lucide-react'
 import { aiUsageSummary } from '@/lib/admin/ai-usage'
 import { platformMetrics } from '@/lib/admin/metrics'
@@ -122,8 +123,18 @@ export default async function AdminOverviewPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Lab engagement</CardTitle>
-            <CardDescription>Sessions started and how many finished.</CardDescription>
+            <CardTitle>
+              <Link href="/admin/labs" className="hover:underline underline-offset-4">
+                Lab engagement
+              </Link>
+            </CardTitle>
+            <CardDescription>
+              Sessions started and how many finished.{' '}
+              <Link href="/admin/labs" className="underline underline-offset-4">
+                Full breakdown
+              </Link>{' '}
+              — abandonment, scores, live sessions.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">

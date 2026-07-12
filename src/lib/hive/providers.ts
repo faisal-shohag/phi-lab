@@ -1,14 +1,21 @@
-// Multi-provider structured generation for Hive, with failover and rate-limit
-// cooldowns. Server-only.
+// Multi-provider, multi-key structured generation. Server-only. Used by Hive, the
+// JS Motion tutor, and the post-session report graders.
 //
 // Why not just the Gemini SDK? Because a single provider is a single point of
-// failure: one 429 and every student's post stalls. Hive rotates across three
-// providers, fails over on error, and parks a provider that has hit its rate
-// limit until the limit resets.
+// failure: one 429 and every student's post stalls. This engine rotates across
+// three providers AND across every API key each provider has, fails over on
+// error, and parks whichever KEY hit its rate limit until the limit resets.
 //
-// Provider order (priority): Gemini → Ollama → Groq. Requests rotate the
-// starting provider so consecutive posts don't all land on the same one; on
-// failure the request walks the remaining providers in priority order.
+// Two axes of rotation, and they mean different things:
+//   • provider — priority order Gemini → Ollama → Groq, rotated per request so
+//     consecutive posts don't all land on the same vendor.
+//   • key — every key the environment offers for that provider (see
+//     src/lib/ai-keys/pool.ts). Keys are discovered by naming convention, so a
+//     new GEMINI_API_KEY_5 joins the rotation with no change to this file.
+//
+// The attempt chain tries a different PROVIDER before it tries a second key of
+// the same provider: if Gemini as a whole is having a bad minute, walking its
+// four keys in a row just burns the attempt budget four times over.
 //
 // What each provider actually supports (probed against the live APIs, not
 // assumed):
@@ -22,66 +29,43 @@
 //               fence, so we ask for JSON and extract it. No rate-limit headers.
 import { extractJson, toJsonSchema, requireAllProperties } from './schema'
 import { recordAiUsage, type AiCallContext, type TokenUsage } from './usage'
-import { prisma } from '@/lib/prisma'
+import {
+  adminParkedKeys,
+  availableKeys,
+  AuthFailed,
+  clearError,
+  errorKindOf,
+  keysFor,
+  noteError,
+  park,
+  ProviderError,
+  providerConfigured,
+  PROVIDER_ENUM,
+  RateLimited,
+  recordRateLimit,
+  throwForStatus,
+  type ApiKey,
+  type ProviderId,
+} from '@/lib/ai-keys/pool'
 import { getSettings } from '@/lib/admin/settings'
-import type { AiErrorKind, AiFeature, AiProvider } from '@/generated/prisma/client'
+import type { AiFeature } from '@/generated/prisma/client'
 
-export type ProviderId = 'gemini' | 'ollama' | 'groq'
+export { PROVIDER_ENUM, providerConfigured, type ProviderId }
 
 /**
  * Everything a usage row needs. `feature` is optional and defaults to HIVE —
- * this engine grew up serving Hive, but the JS Motion tutor now borrows its
- * failover machinery, so a caller can override the feature it's stamped under
- * to keep the admin dashboard's per-feature breakdown honest.
+ * this engine grew up serving Hive, but the JS Motion tutor and the lab report
+ * graders now borrow its failover machinery, so a caller can override the feature
+ * it's stamped under to keep the admin dashboard's per-feature breakdown honest.
  */
 export type HiveCallContext = Omit<AiCallContext, 'feature'> & { feature?: AiFeature }
 
-/** ProviderId (internal, lowercase) → the Prisma enum stored on rows. */
-export const PROVIDER_ENUM: Record<ProviderId, AiProvider> = {
-  gemini: 'GEMINI',
-  ollama: 'OLLAMA',
-  groq: 'GROQ',
-}
-
-/** How long a provider stays parked when a rate limit gives us no reset hint. */
-const DEFAULT_COOLDOWN_MS = 60_000
-/** A rejected key won't start working in the next few seconds. */
+/** A rejected key is out for five minutes; it won't start working in three seconds. */
 const AUTH_COOLDOWN_MS = 5 * 60_000
-/** Total provider attempts for one generation before we give up (→ mentor). */
-export const MAX_PROVIDER_ATTEMPTS = 3
+/** Total attempts — provider+key pairs — for one generation before we give up (→ mentor). */
+export const MAX_PROVIDER_ATTEMPTS = 4
 
 const TIMEOUT_MS = 45_000
-
-class RateLimited extends Error {
-  readonly kind: AiErrorKind = 'RATE_LIMITED'
-  constructor(public retryAfterMs: number) {
-    super('rate limited')
-  }
-}
-
-/** A bad/expired key — parking it stops us wasting an attempt slot on it. */
-class AuthFailed extends Error {
-  readonly kind: AiErrorKind = 'AUTH'
-}
-
-/** Any other provider-side failure, bucketed for the dashboard. */
-class ProviderError extends Error {
-  constructor(
-    message: string,
-    public kind: AiErrorKind,
-  ) {
-    super(message)
-  }
-}
-
-/** Map a thrown error onto a dashboard bucket. */
-function errorKindOf(err: unknown): AiErrorKind {
-  if (err instanceof RateLimited || err instanceof AuthFailed) return err.kind
-  if (err instanceof ProviderError) return err.kind
-  if (err instanceof SyntaxError) return 'INVALID_JSON' // JSON.parse threw
-  if (err instanceof Error && err.name === 'AbortError') return 'TIMEOUT'
-  return 'UNKNOWN'
-}
 
 /** What one provider call produced. */
 interface ProviderReply {
@@ -94,139 +78,8 @@ interface Provider {
   /** Lower runs first when we fail over. */
   priority: number
   model: string
-  apiKey(): string | undefined
-  generate(prompt: string, geminiSchema: object, signal: AbortSignal): Promise<ProviderReply>
-}
-
-// ── Rate-limit / health bookkeeping ───────────────────────────────────────
-// In-memory and per-instance, like the coach throttle. A serverless instance
-// that never sees a 429 never parks anyone, which is the correct default: the
-// cost of being wrong is one wasted call that immediately fails over.
-
-interface Health {
-  cooldownUntil: number
-  /** Requests left in the current window, when the provider tells us. */
-  remaining: number | null
-  lastError: string | null
-}
-
-const health = new Map<ProviderId, Health>()
-
-function healthOf(id: ProviderId): Health {
-  let h = health.get(id)
-  if (!h) {
-    h = { cooldownUntil: 0, remaining: null, lastError: null }
-    health.set(id, h)
-  }
-  return h
-}
-
-function park(id: ProviderId, ms: number, reason: string): void {
-  const h = healthOf(id)
-  h.cooldownUntil = Math.max(h.cooldownUntil, Date.now() + ms)
-  h.lastError = reason
-  persistHealth(id)
-}
-
-/**
- * Mirror this provider's current health into `provider_health` for the admin
- * dashboard, which runs in a different instance and can't see the in-memory Map.
- * Best-effort and fire-and-forget, exactly like recordAiUsage: a telemetry write
- * must never fail a generation or hold up the caller.
- */
-function persistHealth(id: ProviderId): void {
-  const h = healthOf(id)
-  const cooldownUntil = h.cooldownUntil > Date.now() ? new Date(h.cooldownUntil) : null
-  void prisma.providerHealth
-    .upsert({
-      where: { provider: PROVIDER_ENUM[id] },
-      create: {
-        provider: PROVIDER_ENUM[id],
-        remaining: h.remaining,
-        cooldownUntil,
-        lastError: h.lastError,
-      },
-      update: { remaining: h.remaining, cooldownUntil, lastError: h.lastError },
-    })
-    .catch(() => {})
-}
-
-function isAvailable(p: Provider): boolean {
-  return Boolean(p.apiKey()) && healthOf(p.id).cooldownUntil <= Date.now()
-}
-
-/** Which providers have an API key configured. Env logic stays in one place. */
-export function providerConfigured(): Record<ProviderId, boolean> {
-  const out = {} as Record<ProviderId, boolean>
-  for (const p of PROVIDERS) out[p.id] = Boolean(p.apiKey())
-  return out
-}
-
-/** Snapshot for logging/debugging. */
-export function providerHealth() {
-  return PROVIDERS.map((p) => {
-    const h = healthOf(p.id)
-    return {
-      id: p.id,
-      configured: Boolean(p.apiKey()),
-      available: isAvailable(p),
-      cooldownMsLeft: Math.max(0, h.cooldownUntil - Date.now()),
-      remaining: h.remaining,
-      lastError: h.lastError,
-    }
-  })
-}
-
-/** Groq reports resets as "1m26.4s" / "210ms" / "2.5s". */
-function parseDuration(v: string | null): number | null {
-  if (!v) return null
-  const trimmed = v.trim()
-  // A bare number in Retry-After means seconds.
-  if (/^\d+$/.test(trimmed)) return Number(trimmed) * 1000
-  const re = /([\d.]+)(ms|s|m|h)/g
-  let ms = 0
-  let matched = false
-  for (const [, num, unit] of trimmed.matchAll(re)) {
-    matched = true
-    const n = Number(num)
-    ms += unit === 'ms' ? n : unit === 's' ? n * 1000 : unit === 'm' ? n * 60_000 : n * 3_600_000
-  }
-  return matched ? ms : null
-}
-
-/** Read whatever rate-limit signal a response carries, and park if exhausted. */
-function recordRateLimit(id: ProviderId, res: Response): void {
-  const h = healthOf(id)
-  const remaining = res.headers.get('x-ratelimit-remaining-requests')
-  if (remaining !== null) {
-    h.remaining = Number(remaining)
-    if (h.remaining <= 0) {
-      const reset = parseDuration(res.headers.get('x-ratelimit-reset-requests')) ?? DEFAULT_COOLDOWN_MS
-      park(id, reset, 'request quota exhausted') // park() already persists
-    } else {
-      persistHealth(id)
-    }
-  }
-}
-
-async function throwForStatus(id: ProviderId, res: Response): Promise<never> {
-  const body = await res.text().catch(() => '')
-  if (res.status === 429) {
-    const retryAfter =
-      parseDuration(res.headers.get('retry-after')) ??
-      parseDuration(res.headers.get('x-ratelimit-reset-requests')) ??
-      // Gemini puts `"retryDelay": "34s"` in the error body.
-      parseDuration(/"retryDelay"\s*:\s*"([^"]+)"/.exec(body)?.[1] ?? null) ??
-      DEFAULT_COOLDOWN_MS
-    throw new RateLimited(retryAfter)
-  }
-  if (res.status === 401 || res.status === 403) {
-    throw new AuthFailed(`${id} rejected the API key (${res.status})`)
-  }
-  // 400 is a malformed request (usually a schema the provider won't accept),
-  // not a dead provider — fail over, but never park it.
-  const kind: AiErrorKind = res.status === 400 ? 'BAD_REQUEST' : 'SERVER_ERROR'
-  throw new ProviderError(`${id} responded ${res.status}: ${body.slice(0, 300)}`, kind)
+  /** The key is chosen by the pool and handed in — a provider owns no key of its own. */
+  generate(prompt: string, geminiSchema: object, key: ApiKey, signal: AbortSignal): Promise<ProviderReply>
 }
 
 // ── Providers ─────────────────────────────────────────────────────────────
@@ -240,16 +93,13 @@ const gemini: Provider = {
   id: 'gemini',
   priority: 0,
   model: GEMINI_MODEL,
-  // The Hive is pinned to key #2 so it can't exhaust the quota the voice labs
-  // share on GEMINI_API_KEY.
-  apiKey: () => process.env.GEMINI_API_KEY_2 || process.env.GEMINI_API_KEY,
-  async generate(prompt, geminiSchema, signal) {
+  async generate(prompt, geminiSchema, key, signal) {
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
       {
         method: 'POST',
         signal,
-        headers: { 'content-type': 'application/json', 'x-goog-api-key': gemini.apiKey()! },
+        headers: { 'content-type': 'application/json', 'x-goog-api-key': key.value },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
@@ -259,8 +109,8 @@ const gemini: Provider = {
         }),
       },
     )
-    recordRateLimit('gemini', res)
-    if (!res.ok) await throwForStatus('gemini', res)
+    recordRateLimit(key, res)
+    if (!res.ok) await throwForStatus(key, res)
     const data = await res.json()
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text
     if (!text) throw new ProviderError('gemini returned an empty response', 'SERVER_ERROR')
@@ -280,15 +130,14 @@ const groq: Provider = {
   id: 'groq',
   priority: 2,
   model: GROQ_MODEL,
-  apiKey: () => process.env.GROQ_API_KEY,
-  async generate(prompt, geminiSchema, signal) {
+  async generate(prompt, geminiSchema, key, signal) {
     // Groq's strict mode requires every property to be listed in `required`
     // and forbids extra keys, so optional fields are made required-but-empty.
     const schema = requireAllProperties(toJsonSchema(geminiSchema))
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       signal,
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${groq.apiKey()}` },
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${key.value}` },
       body: JSON.stringify({
         model: GROQ_MODEL,
         messages: [{ role: 'user', content: prompt }],
@@ -298,8 +147,8 @@ const groq: Provider = {
         },
       }),
     })
-    recordRateLimit('groq', res)
-    if (!res.ok) await throwForStatus('groq', res)
+    recordRateLimit(key, res)
+    if (!res.ok) await throwForStatus(key, res)
     const data = await res.json()
     const text = data?.choices?.[0]?.message?.content
     if (!text) throw new ProviderError('groq returned an empty response', 'SERVER_ERROR')
@@ -319,8 +168,7 @@ const ollama: Provider = {
   id: 'ollama',
   priority: 1,
   model: OLLAMA_MODEL,
-  apiKey: () => process.env.OLLAMA_API_KEY,
-  async generate(prompt, geminiSchema, signal) {
+  async generate(prompt, geminiSchema, key, signal) {
     // Ollama Cloud silently ignores `format` and `response_format`, so the
     // schema goes in the prompt and we dig the JSON out of the reply.
     const schema = toJsonSchema(geminiSchema)
@@ -335,7 +183,7 @@ const ollama: Provider = {
     const res = await fetch('https://ollama.com/api/chat', {
       method: 'POST',
       signal,
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${ollama.apiKey()}` },
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${key.value}` },
       body: JSON.stringify({
         model: OLLAMA_MODEL,
         stream: false,
@@ -347,8 +195,8 @@ const ollama: Provider = {
         messages: [{ role: 'user', content: instructed }],
       }),
     })
-    recordRateLimit('ollama', res)
-    if (!res.ok) await throwForStatus('ollama', res)
+    recordRateLimit(key, res)
+    if (!res.ok) await throwForStatus(key, res)
     const data = await res.json()
     if (data?.done_reason === 'length') {
       throw new ProviderError('ollama truncated its reply at the token cap', 'TRUNCATED')
@@ -373,26 +221,18 @@ const PROVIDERS: Provider[] = [gemini, ollama, groq].sort((a, b) => a.priority -
 
 // ── Selection + failover ──────────────────────────────────────────────────
 
-// Rotates the starting provider so successive posts spread across the fleet
-// instead of hammering whichever one is first.
-let rotation = 0
-
-/**
- * Available providers, rotated so the same one doesn't always go first.
- *
- * `adminParked` is the admin kill switch — distinct from the automatic
- * rate-limit cooldown that `isAvailable` checks. An admin parks a provider
- * because its bill or its output is wrong; the cooldown parks it because it
- * said 429. Both remove it from rotation, and neither should resurrect it.
- */
-function attemptOrder(adminParked: ReadonlySet<ProviderId>): Provider[] {
-  const available = PROVIDERS.filter((p) => isAvailable(p) && !adminParked.has(p.id))
-  if (available.length <= 1) return available
-  const start = rotation++ % available.length
-  return [...available.slice(start), ...available.slice(0, start)]
+/** One attempt: this provider, on this key. */
+interface Candidate {
+  provider: Provider
+  key: ApiKey
 }
 
-/** The set of providers an admin has switched off. */
+// Rotates the starting provider so successive posts spread across the fleet
+// instead of hammering whichever one is first. (Key-level rotation lives in the
+// pool, which keeps its own cursor per provider.)
+let rotation = 0
+
+/** The set of providers an admin has switched off, wholesale. */
 async function adminParkedProviders(): Promise<ReadonlySet<ProviderId>> {
   const parked = new Set<ProviderId>()
   try {
@@ -406,72 +246,135 @@ async function adminParkedProviders(): Promise<ReadonlySet<ProviderId>> {
   return parked
 }
 
+/**
+ * The attempt chain: every usable (provider, key) pair, best first.
+ *
+ * Providers rotate so the same vendor doesn't always go first, and each
+ * contributes ONE key per pass. Breadth before depth — a second Gemini key is
+ * only worth trying after Ollama and Groq have had their turn, because the
+ * failure that knocked out the first Gemini key is more often Gemini's than the
+ * key's.
+ *
+ * Two kinds of parking remove a candidate here, and neither should resurrect it:
+ * an admin kill switch (the bill or the output is wrong) and an automatic
+ * cooldown (the vendor said 429).
+ */
+async function attemptChain(): Promise<Candidate[]> {
+  const [parkedProviders, parkedKeys] = await Promise.all([adminParkedProviders(), adminParkedKeys()])
+
+  // Peek — `advance: false`. Every provider is asked for its keys on every
+  // request, but only the one that leads actually serves it, so advancing them
+  // all here would tick the key cursors in lockstep with the provider rotation
+  // and alias (see availableKeys). The leading provider's cursor is advanced
+  // below, once we know who it is.
+  const usable = PROVIDERS.filter((p) => !parkedProviders.has(p.id)).map((provider) => ({
+    provider,
+    keys: availableKeys(provider.id, 'text', parkedKeys, false),
+  }))
+  const live = usable.filter((u) => u.keys.length > 0)
+  if (live.length === 0) return []
+
+  const start = rotation++ % live.length
+  const order = [...live.slice(start), ...live.slice(0, start)]
+
+  // The provider that goes first is the one whose key is actually spent, so it —
+  // and only it — moves on to its next key for the next request.
+  order[0] = {
+    provider: order[0].provider,
+    keys: availableKeys(order[0].provider.id, 'text', parkedKeys, true),
+  }
+
+  const chain: Candidate[] = []
+  const deepest = Math.max(...order.map((u) => u.keys.length))
+  for (let pass = 0; pass < deepest; pass++) {
+    for (const { provider, keys } of order) {
+      const key = keys[pass]
+      if (key) chain.push({ provider, key })
+    }
+  }
+  return chain
+}
+
+/** Snapshot for logging/debugging: one row per key, grouped under its provider. */
+export function providerHealth() {
+  const configured = providerConfigured()
+  return PROVIDERS.map((p) => ({
+    id: p.id,
+    configured: configured[p.id],
+    model: p.model,
+    keys: keysFor(p.id).map((k) => k.keyId),
+  }))
+}
+
 export class AllProvidersFailed extends Error {
-  constructor(public attempts: { id: ProviderId; error: string }[]) {
+  constructor(public attempts: { id: ProviderId; keyId: string; error: string }[]) {
     super(
       attempts.length === 0
-        ? 'no AI provider available: every provider is unconfigured or cooling down'
-        : `all AI providers failed: ${attempts.map((a) => `${a.id} (${a.error})`).join('; ')}`,
+        ? 'no AI provider available: every key is unconfigured, parked or cooling down'
+        : `all AI providers failed: ${attempts.map((a) => `${a.id}/${a.keyId} (${a.error})`).join('; ')}`,
     )
     this.name = 'AllProvidersFailed'
   }
 }
 
 /**
- * Generate a structured response, failing over between providers.
+ * Generate a structured response, failing over between providers and keys.
  *
- * Tries up to MAX_PROVIDER_ATTEMPTS providers. A rate-limited provider is
- * parked until its limit resets and is skipped by later calls. When every
- * attempt fails the caller (runAiAttempt) escalates the post to a mentor.
+ * Tries up to MAX_PROVIDER_ATTEMPTS candidates. A rate-limited key is parked
+ * until its limit resets and is skipped by later calls. When every attempt fails
+ * the caller (runAiAttempt) escalates the post to a mentor.
  */
 export interface GenerationResult<T> {
   data: T
   /** Which provider actually answered — recorded on the post's timeline. */
   provider: ProviderId
+  /** Which key answered, by env var name. For the dashboard, not for users. */
+  keyId: string
 }
 
 /**
  * Like generateStructured, but also tells you who answered.
  *
- * Every provider call — success or failure — writes one AiUsageEvent, so the
- * admin dashboard sees the failovers, not just the answer that eventually
- * landed. `ctx` says what the call was for.
+ * Every attempt — success or failure — writes one AiUsageEvent stamped with the
+ * key it used, so the admin dashboard sees the failovers and the per-key burn,
+ * not just the answer that eventually landed. `ctx` says what the call was for.
  */
 export async function generateStructuredWithMeta<T>(
   prompt: string,
   geminiSchema: object,
   ctx: HiveCallContext,
 ): Promise<GenerationResult<T>> {
-  const attempts: { id: ProviderId; error: string }[] = []
-  const order = attemptOrder(await adminParkedProviders()).slice(0, MAX_PROVIDER_ATTEMPTS)
+  const attempts: { id: ProviderId; keyId: string; error: string }[] = []
+  const chain = (await attemptChain()).slice(0, MAX_PROVIDER_ATTEMPTS)
 
-  if (order.length === 0) {
+  if (chain.length === 0) {
     void recordAiUsage({
       feature: 'HIVE',
       ...ctx,
-      provider: 'GEMINI', // no provider was reachable; the row records the gap
+      provider: 'GEMINI', // no key was reachable; the row records the gap
       model: 'none',
       success: false,
       latencyMs: 0,
       tryIndex: 0,
       errorKind: 'NO_PROVIDER',
-      errorMessage: 'every provider is unconfigured or cooling down',
+      errorMessage: 'every key is unconfigured, parked or cooling down',
     })
     throw new AllProvidersFailed(attempts)
   }
 
-  for (const [index, provider] of order.entries()) {
+  for (const [index, { provider, key }] of chain.entries()) {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
     const startedAt = Date.now()
     try {
-      const reply = await provider.generate(prompt, geminiSchema, controller.signal)
+      const reply = await provider.generate(prompt, geminiSchema, key, controller.signal)
       const parsed = JSON.parse(reply.text) as T
-      healthOf(provider.id).lastError = null
+      clearError(key)
       void recordAiUsage({
         feature: 'HIVE',
         ...ctx,
         provider: PROVIDER_ENUM[provider.id],
+        keyId: key.keyId,
         model: provider.model,
         success: true,
         latencyMs: Date.now() - startedAt,
@@ -481,29 +384,35 @@ export async function generateStructuredWithMeta<T>(
           ? (parsed as { confidence: number }).confidence
           : undefined,
       })
-      return { data: parsed, provider: provider.id }
+      return { data: parsed, provider: provider.id, keyId: key.keyId }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'unknown error'
       const kind = errorKindOf(err)
 
-      // Only a rate limit or a rejected key takes a provider out of rotation.
-      // A one-off 500, timeout or malformed body must not park it — that would
-      // let a single bad post cascade into a Hive-wide outage.
+      // Only a rate limit or a rejected key takes a KEY out of rotation, and it
+      // takes only that key — its siblings and the provider itself stay in. A
+      // one-off 500, timeout or malformed body parks nothing: that would let a
+      // single bad post cascade into a fleet-wide outage.
       if (err instanceof RateLimited) {
-        park(provider.id, err.retryAfterMs, 'rate limited')
-        attempts.push({ id: provider.id, error: `rate limited for ${Math.round(err.retryAfterMs / 1000)}s` })
+        park(key, err.retryAfterMs, 'rate limited')
+        attempts.push({
+          id: provider.id,
+          keyId: key.keyId,
+          error: `rate limited for ${Math.round(err.retryAfterMs / 1000)}s`,
+        })
       } else if (err instanceof AuthFailed) {
-        park(provider.id, AUTH_COOLDOWN_MS, message)
-        attempts.push({ id: provider.id, error: message })
+        park(key, AUTH_COOLDOWN_MS, message)
+        attempts.push({ id: provider.id, keyId: key.keyId, error: message })
       } else {
-        healthOf(provider.id).lastError = message
-        attempts.push({ id: provider.id, error: message })
+        noteError(key, message)
+        attempts.push({ id: provider.id, keyId: key.keyId, error: message })
       }
 
       void recordAiUsage({
         feature: 'HIVE',
         ...ctx,
         provider: PROVIDER_ENUM[provider.id],
+        keyId: key.keyId,
         model: provider.model,
         success: false,
         latencyMs: Date.now() - startedAt,
@@ -512,10 +421,10 @@ export async function generateStructuredWithMeta<T>(
         errorMessage: message,
       })
 
-      // Switch provider immediately. Logged because a provider that quietly
-      // always loses the race is invisible otherwise — its lastError gets
-      // cleared by its next success on a different call.
-      console.warn(`[hive] provider ${provider.id} failed (${kind}), failing over:`, message)
+      // Switch candidate immediately. Logged because a key that quietly always
+      // loses the race is invisible otherwise — its lastError gets cleared by its
+      // next success on a different call.
+      console.warn(`[hive] ${provider.id}/${key.keyId} failed (${kind}), failing over:`, message)
     } finally {
       clearTimeout(timer)
     }

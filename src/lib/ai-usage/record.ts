@@ -33,6 +33,11 @@ export interface TokenUsage {
 
 export interface UsageRow extends AiCallContext {
   provider: AiProvider
+  /**
+   * Which API key served the call, by ENV VAR NAME ("GEMINI_API_KEY_1") — never
+   * the key itself. Omitted only when no key was reached (NO_PROVIDER).
+   */
+  keyId?: string
   model: string
   success: boolean
   latencyMs: number
@@ -58,6 +63,7 @@ export async function recordAiUsageStrict(row: UsageRow): Promise<void> {
     data: {
       feature: row.feature,
       provider: row.provider,
+      keyId: row.keyId ?? null,
       model: row.model,
       task: row.task,
       success: row.success,

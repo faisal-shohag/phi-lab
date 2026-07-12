@@ -12,9 +12,30 @@ export interface ClientAwardRequest {
   concept?: string
 }
 
-// Concepts the JS Motion visualizer can credit as "mastered" (one demo each).
-// Kept here so the award route can reject anything a client makes up.
-export const VIZ_CONCEPTS = ['recursion', 'closures', 'event-loop', 'oop', 'sorting'] as const
+// Concepts the JS Motion visualizer can credit as "mastered" (stepping a demo to
+// its final frame). Kept here so the award route can reject anything a client
+// makes up.
+//
+// The first five are load-bearing for badges (see badges.ts) — do not rename
+// them. The rest were added for The Path, which needs every demo it references
+// to leave a verifiable trace; before, only five of the nineteen demos did, so a
+// path node built on "step the Arrays demo" had no evidence to check against.
+export const VIZ_CONCEPTS = [
+  'recursion',
+  'closures',
+  'event-loop',
+  'oop',
+  'sorting',
+  'conditionals',
+  'loops',
+  'arrays',
+  'functions',
+  'references',
+  'hoisting',
+  'two-pointers',
+  'destructuring',
+  'array-methods',
+] as const
 
 interface Resolved {
   amount: number

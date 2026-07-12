@@ -16,6 +16,13 @@ import { ROUND_SECONDS } from './concepts'
 import type { FeynmanReport } from './report-types'
 import type { InterviewErrorCode } from '@/lib/interview/errors'
 import { useLiveUsageReporter } from '@/lib/ai-usage/live-reporter'
+import {
+  beaconAbandon,
+  END_OK_RESPONSE,
+  minElapsedSeconds,
+  TOO_EARLY_RESPONSE,
+  waitForFarewell,
+} from '@/lib/labs/end-session'
 
 const LIVE_MODEL = 'gemini-3.1-flash-live-preview'
 const WRAP_UP_AT = 15
@@ -108,6 +115,10 @@ export function useFeynman(): UseFeynman {
   const mutedRef = useRef(false)
   const wrappedUpRef = useRef(false)
   const finishingRef = useRef(false)
+  /** The student has called end_session and is saying goodbye. */
+  const endingRef = useRef(false)
+  /** The lesson's full length, for the end_session guard. Mirrors roundTotal. */
+  const roundTotalRef = useRef(ROUND_SECONDS)
   const intentionalCloseRef = useRef(false)
   const reconnectingRef = useRef(false)
   const resumeHandleRef = useRef<string | null>(null)
@@ -152,6 +163,17 @@ export function useFeynman(): UseFeynman {
   }, [])
 
   const teardown = useCallback(() => {
+    // Unmounting mid-lesson (tab closed, navigated away) is the one exit that
+    // produces no report — so it is the one that has to say so, or the row is
+    // stranded at IN_PROGRESS forever. A lesson that is finishing is not abandoned.
+    if (
+      (phaseRef.current === 'live' || phaseRef.current === 'reconnecting') &&
+      !finishingRef.current &&
+      !endingRef.current
+    ) {
+      beaconAbandon('FEYNMAN', sessionIdRef.current)
+    }
+
     stopTimers()
     intentionalCloseRef.current = true
     micRef.current?.stop()
@@ -225,6 +247,20 @@ export function useFeynman(): UseFeynman {
   const finishRef = useRef<() => Promise<void>>(() => Promise.resolve())
   useEffect(() => { finishRef.current = finish }, [finish])
 
+  // The student asked to end the lesson. Let it finish saying goodbye, THEN close
+  // — finish() kills the socket, so calling it straight away would cut the
+  // farewell off mid-word. The countdown stops first so the clock can't beat us.
+  const gracefulFinish = useCallback(async () => {
+    if (endingRef.current || finishingRef.current) return
+    endingRef.current = true
+    stopTimers()
+    await waitForFarewell(() => playbackRef.current?.pendingSeconds() ?? 0)
+    await finishRef.current()
+  }, [stopTimers])
+
+  const gracefulFinishRef = useRef<() => Promise<void>>(() => Promise.resolve())
+  useEffect(() => { gracefulFinishRef.current = gracefulFinish }, [gracefulFinish])
+
   const handleMessage = useCallback((msg: LiveServerMessage) => {
     // Token counts for this round only reach us here — the socket is
     // browser-to-Google. Cumulative, so the reporter keeps the latest.
@@ -233,6 +269,23 @@ export function useFeynman(): UseFeynman {
     const resume = msg.sessionResumptionUpdate
     if (resume?.resumable && resume.newHandle) {
       resumeHandleRef.current = resume.newHandle
+    }
+
+    // The student can end the lesson itself once the teacher is done — but not in
+    // the opening stretch, where a misread pause would cost them the whole round.
+    // A refusal is not an error: the model just keeps learning.
+    for (const call of msg.toolCall?.functionCalls ?? []) {
+      if (call.name !== 'end_session') continue
+      const elapsed = roundTotalRef.current - secondsLeftRef.current
+      const tooEarly = elapsed < minElapsedSeconds(roundTotalRef.current)
+      try {
+        sessionRef.current?.sendToolResponse({
+          functionResponses: [
+            { id: call.id, name: call.name, response: tooEarly ? TOO_EARLY_RESPONSE : END_OK_RESPONSE },
+          ],
+        })
+      } catch {}
+      if (!tooEarly) void gracefulFinishRef.current()
     }
 
     const content = msg.serverContent
@@ -320,6 +373,7 @@ export function useFeynman(): UseFeynman {
       secondsLeftRef.current = roundSeconds
       setSecondsLeft(roundSeconds)
       setRoundTotal(roundSeconds)
+      roundTotalRef.current = roundSeconds
     }
 
     // Start the usage clock on a fresh round only. A reconnect continues the
@@ -413,10 +467,12 @@ export function useFeynman(): UseFeynman {
     setSecondsLeft(ROUND_SECONDS)
     secondsLeftRef.current = ROUND_SECONDS
     setRoundTotal(ROUND_SECONDS)
+    roundTotalRef.current = ROUND_SECONDS
     setMuted(false)
     mutedRef.current = false
     wrappedUpRef.current = false
     finishingRef.current = false
+    endingRef.current = false
     reconnectingRef.current = false
     resumeHandleRef.current = null
     sessionIdRef.current = null
@@ -486,6 +542,7 @@ export function useFeynman(): UseFeynman {
     reconnectingRef.current = false
     teardown()
     finishingRef.current = false
+    endingRef.current = false
     wrappedUpRef.current = false
     sessionIdRef.current = null
     resumeHandleRef.current = null
@@ -498,6 +555,7 @@ export function useFeynman(): UseFeynman {
     setSecondsLeft(ROUND_SECONDS)
     secondsLeftRef.current = ROUND_SECONDS
     setRoundTotal(ROUND_SECONDS)
+    roundTotalRef.current = ROUND_SECONDS
     setMuted(false)
     mutedRef.current = false
   }, [teardown, setPhase])

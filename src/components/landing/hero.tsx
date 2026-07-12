@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { ArrowRight, Mic, Cpu, Sparkles } from 'lucide-react'
+import { ArrowRight, Mic, Cpu, Sparkles, Route } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { PhiOrb } from './phi-orb'
@@ -93,14 +93,14 @@ export function Hero() {
             transition={{ delay: 0.36 }}
             className="mt-7 flex flex-col gap-3 sm:flex-row"
           >
-            <Button asChild size="lg" className="h-12 text-base bg-linear-to-r from-pink-500 to-red-500">
-              <Link href="/labs/js-motion">
-                <Cpu className="mr-1.5" /> Step through code
+            <Button asChild size="lg" className="h-12 text-base bg-linear-to-r from-amber-500 to-orange-500">
+              <Link href="/path">
+                <Route className="mr-1.5" /> Start the Path
               </Link>
             </Button>
             <Button asChild size="lg" variant="outline" className="h-12 text-base">
-              <Link href="/labs/interview">
-                <Mic className="mr-1.5" /> Take a mock interview
+              <Link href="/labs/js-motion">
+                <Cpu className="mr-1.5" /> Step through code
               </Link>
             </Button>
           </motion.div>

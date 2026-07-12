@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from '@google/genai'
+import { Type } from '@google/genai'
 import { topicById, levelById, type LevelId, type LanguageId } from '@/lib/interview/topics'
 import type { InterviewReport } from '@/lib/interview/report-types'
 import { requireUser } from '@/lib/auth-server'
@@ -6,15 +6,17 @@ import { errorResponse } from '@/lib/interview/errors'
 import { prisma } from '@/lib/prisma'
 import { awardXp } from '@/lib/gamification/award'
 import { interviewXp } from '@/lib/gamification/reasons'
-import { recordAiUsage } from '@/lib/ai-usage/record'
-import { normalizeTokens } from '@/lib/ai-usage/tokens'
+import { generateStructured } from '@/lib/hive/providers'
 
 // Generates the post-interview report from the transcript stored server-side.
 // Uses a standard (non-Live) text model so it can return structured JSON via a
 // responseSchema. The report is persisted on the session row; re-calling this
 // route with the same sessionId is how the "Try again" retry works.
-
-const REPORT_MODEL = 'gemini-3.1-flash-lite'
+//
+// Grading goes through the shared failover engine (src/lib/hive/providers.ts),
+// so it rotates across every Gemini key and falls back to Ollama/Groq rather
+// than losing a student's report to one 429. The engine owns the model choice
+// and writes the AiUsageEvent rows — including the failed attempts.
 
 type Role = 'interviewer' | 'candidate'
 interface TurnEntry {
@@ -76,9 +78,6 @@ function notEnoughSignal(topicLabel: string): InterviewReport {
 }
 
 export async function POST(request: Request) {
-  const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) return errorResponse('SERVER_ERROR', 'GEMINI_API_KEY is not configured on the server.')
-
   const user = await requireUser()
   if (!user) return errorResponse('AUTH_REQUIRED')
 
@@ -136,51 +135,14 @@ export async function POST(request: Request) {
     .filter(Boolean)
     .join('\n')
 
-  // Telemetry context shared by the success and failure paths below. Both are
-  // recorded: a dashboard built only on successful calls shows a fleet that
-  // never has a bad day.
-  const startedAt = Date.now()
-  const usageBase = {
-    feature: 'INTERVIEW',
-    task: 'REPORT',
-    provider: 'GEMINI',
-    model: REPORT_MODEL,
-    tryIndex: 1,
-    sessionId,
-    userId: user.id,
-  } as const
-
   try {
-    const ai = new GoogleGenAI({ apiKey })
-    const response = await ai.models.generateContent({
-      model: REPORT_MODEL,
-      contents: prompt,
-      config: { responseMimeType: 'application/json', responseSchema: REPORT_SCHEMA },
-    })
-
-    const text = response.text
-    if (!text) {
-      void recordAiUsage({
-        ...usageBase,
-        success: false,
-        latencyMs: Date.now() - startedAt,
-        tokens: normalizeTokens(response.usageMetadata),
-        errorKind: 'TRUNCATED',
-        errorMessage: 'the model returned an empty report',
-      })
-      await prisma.interviewSession.update({ where: { id: sessionId }, data: { status: 'FAILED' } })
-      return errorResponse('REPORT_FAILED', 'The model returned an empty report.')
-    }
-
-    // Recorded only once the payload actually parses — a malformed body is an
-    // INVALID_JSON failure, and it falls to the catch below.
-    const report = JSON.parse(text) as InterviewReport
-
-    void recordAiUsage({
-      ...usageBase,
-      success: true,
-      latencyMs: Date.now() - startedAt,
-      tokens: normalizeTokens(response.usageMetadata),
+    // The engine records the usage row per attempt, empty/malformed replies
+    // included, and fails over to the next key or provider on its own.
+    const report = await generateStructured<InterviewReport>(prompt, REPORT_SCHEMA, {
+      feature: 'INTERVIEW',
+      task: 'REPORT',
+      sessionId,
+      userId: user.id,
     })
 
     await prisma.interviewSession.update({
@@ -209,14 +171,10 @@ export async function POST(request: Request) {
 
     return Response.json(report)
   } catch (err) {
+    // Every key and provider failed, or the reply wouldn't parse. The session is
+    // marked FAILED, which is what lets the UI offer "Try again" — a retry gets a
+    // fresh candidate chain, and by then a parked key may well have freed up.
     const message = err instanceof Error ? err.message : 'Unknown error'
-    void recordAiUsage({
-      ...usageBase,
-      success: false,
-      latencyMs: Date.now() - startedAt,
-      errorKind: err instanceof SyntaxError ? 'INVALID_JSON' : 'UNKNOWN',
-      errorMessage: message,
-    })
     await prisma.interviewSession.update({ where: { id: sessionId }, data: { status: 'FAILED' } }).catch(() => {})
     return errorResponse('REPORT_FAILED', `Failed to generate report: ${message}`)
   }

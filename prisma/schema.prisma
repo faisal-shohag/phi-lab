@@ -19,46 +19,46 @@ enum Role {
 }
 
 model User {
-  id            String    @id
-  name          String
-  email         String
-  emailVerified Boolean   @default(false)
-  image         String?
-  xp            Int       @default(0)
+  id                String             @id
+  name              String
+  email             String
+  emailVerified     Boolean            @default(false)
+  image             String?
+  xp                Int                @default(0)
   // Helpdesk role. Mentors/admins are seeded lazily from HIVE_MENTOR_EMAILS
   // (see src/lib/hive/roles.ts). STUDENT for everyone else.
-  role          Role      @default(STUDENT)
+  role              Role               @default(STUDENT)
   // Optional career/profile info — surfaced on /profile and the public /u/[id]
   // page. Everything here is opt-in; empty values simply lower the profile
   // completion score. `profilePublic` gates whether /u/[id] is viewable.
-  headline      String?
-  bio           String?
-  goal          String?
-  skills        String[]  @default([])
-  location      String?
-  resumeUrl     String?
-  githubUrl     String?
-  linkedinUrl   String?
-  websiteUrl    String?
-  profilePublic Boolean   @default(false)
+  headline          String?
+  bio               String?
+  goal              String?
+  skills            String[]           @default([])
+  location          String?
+  resumeUrl         String?
+  githubUrl         String?
+  linkedinUrl       String?
+  websiteUrl        String?
+  profilePublic     Boolean            @default(false)
   // Suspension. Enforced at DB-read choke points (getHiveUser + the lab token
   // routes), never from the session cookie: better-auth caches the session in a
   // signed JWT for 30 days, so a cookie-only check would let a suspended user
   // keep working until it refreshed.
-  suspendedAt     DateTime?
-  suspendedReason String?
-  suspendedById   String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  sessions      Session[]
-  accounts      Account[]
-  interviews    InterviewSession[]
-  feynman       FeynmanSession[]
-  english       EnglishSession[]
-  analogies     AnalogyCard[]
-  support       SupportSession[]
-  xpEvents      XpEvent[]
-  badges        UserBadge[]
+  suspendedAt       DateTime?
+  suspendedReason   String?
+  suspendedById     String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  sessions          Session[]
+  accounts          Account[]
+  interviews        InterviewSession[]
+  feynman           FeynmanSession[]
+  english           EnglishSession[]
+  analogies         AnalogyCard[]
+  support           SupportSession[]
+  xpEvents          XpEvent[]
+  badges            UserBadge[]
   challengeAttempts ChallengeAttempt[]
   hivePosts         HivePost[]         @relation("PostAuthor")
   assignedHivePosts HivePost[]         @relation("PostMentor")
@@ -66,6 +66,9 @@ model User {
   hiveReactions     HiveReaction[]
   hiveFollows       HiveFollow[]
   hiveNotifications HiveNotification[]
+  pathProgress      PathProgress[]
+  dailyQuests       DailyQuest[]
+  weeklyPlans       WeeklyPlan[]
 
   @@unique([email])
   @@index([suspendedAt])
@@ -77,28 +80,28 @@ model User {
 // never sees. Mutable per-round state (attemptsUsed, status, expiresAt) is why
 // this can't just be an append-only XpEvent.
 model ChallengeAttempt {
-  id           String    @id @default(cuid())
-  userId       String
-  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  difficulty   String    // easy | medium | hard
-  mode         String    // oneshot | retries | timed
-  lang         String    @default("bengali") // bengali | english (prompt + hint language)
-  stake        Int
-  status       String    @default("active") // active | won | lost
-  fnName       String
-  prompt       String                 // Bengali task text (shown to the learner)
-  sampleInput  Json                   // one visible example input (shown)
-  sampleOutput String                 // its output (shown)
-  tests        Json                   // SERVER-ONLY: [{ args: [...], expected: string }]
-  referenceSolution String?           // SERVER-ONLY until won; then revealed to the winner
-  attemptsUsed Int       @default(0)
-  maxAttempts  Int                    // oneshot=1, timed=3, retries=9999
-  hintsUsed    Int       @default(0)
-  expiresAt    DateTime?              // timed mode only
-  wonXp        Int?                   // XP credited on win (base × streak multiplier)
-  winStreak    Int?                   // consecutive-win streak at the moment of this win
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  difficulty        String // easy | medium | hard
+  mode              String // oneshot | retries | timed
+  lang              String    @default("bengali") // bengali | english (prompt + hint language)
+  stake             Int
+  status            String    @default("active") // active | won | lost
+  fnName            String
+  prompt            String // Bengali task text (shown to the learner)
+  sampleInput       Json // one visible example input (shown)
+  sampleOutput      String // its output (shown)
+  tests             Json // SERVER-ONLY: [{ args: [...], expected: string }]
+  referenceSolution String? // SERVER-ONLY until won; then revealed to the winner
+  attemptsUsed      Int       @default(0)
+  maxAttempts       Int // oneshot=1, timed=3, retries=9999
+  hintsUsed         Int       @default(0)
+  expiresAt         DateTime? // timed mode only
+  wonXp             Int? // XP credited on win (base × streak multiplier)
+  winStreak         Int? // consecutive-win streak at the moment of this win
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@index([userId, status])
   @@map("challenge_attempt")
@@ -136,10 +139,20 @@ model UserBadge {
   @@map("user_badge")
 }
 
+/**
+ * Shared by the interview, feynman and english labs — they run the same lifecycle.
+ */
 enum InterviewStatus {
   IN_PROGRESS
   COMPLETED
   FAILED
+  /**
+   * The learner walked away — closed the tab or navigated off mid-round. Without
+   * this, such a session sits at IN_PROGRESS forever: it never reaches a report,
+   * so nothing ever moves it on. Set by /api/labs/abandon on unload, and by the
+   * cron sweep for the beacon that never arrived.
+   */
+  ABANDONED
 }
 
 model InterviewSession {
@@ -245,14 +258,14 @@ model SupportSession {
   id         String    @id @default(cuid())
   userId     String
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  category   String    // 'coding' | 'mental' | 'guidance' | 'other'
-  problem    String    // written before joining; seeds the AI's context
+  category   String // 'coding' | 'mental' | 'guidance' | 'other'
+  problem    String // written before joining; seeds the AI's context
   language   String    @default("en") // 'en' | 'bn'
   voice      String    @default("Kore")
   status     String    @default("waiting")
   transcript Json?
-  rating     Int?      // 1-5, set after the session
-  feedback   String?   // optional free-text comment
+  rating     Int? // 1-5, set after the session
+  feedback   String? // optional free-text comment
   lastSeenAt DateTime  @default(now()) // heartbeat; a stale active row frees its slot
   startedAt  DateTime? // set when promoted to active
   endedAt    DateTime?
@@ -334,49 +347,49 @@ enum HivePostStatus {
 }
 
 model HivePost {
-  id               String         @id @default(cuid())
-  authorId         String? // null for AI-authored (encouragement) posts
-  author           User?          @relation("PostAuthor", fields: [authorId], references: [id], onDelete: Cascade)
-  type             HivePostType   @default(QUESTION)
-  title            String
-  body             String // markdown
-  images           String[]       @default([]) // cloudinary secure_urls
-  tags             String[]       @default([]) // from triage
-  topic            String? // triage: e.g. "javascript", "css"
-  milestone        String? // triage: course milestone guess
-  severity         String? // 'low' | 'medium' | 'high'
-  sensitive        Boolean        @default(false)
-  status           HivePostStatus @default(OPEN)
-  aiAttemptCount   Int            @default(0) // 0..3
-  assignedMentorId String?
-  assignedMentor   User?          @relation("PostMentor", fields: [assignedMentorId], references: [id], onDelete: SetNull)
-  acceptedReplyId  String?        @unique // plain unique string, no FK (avoids circular relation)
-  pinned           Boolean        @default(false) // announcements
+  id                      String          @id @default(cuid())
+  authorId                String? // null for AI-authored (encouragement) posts
+  author                  User?           @relation("PostAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  type                    HivePostType    @default(QUESTION)
+  title                   String
+  body                    String // markdown
+  images                  String[]        @default([]) // cloudinary secure_urls
+  tags                    String[]        @default([]) // from triage
+  topic                   String? // triage: e.g. "javascript", "css"
+  milestone               String? // triage: course milestone guess
+  severity                String? // 'low' | 'medium' | 'high'
+  sensitive               Boolean         @default(false)
+  status                  HivePostStatus  @default(OPEN)
+  aiAttemptCount          Int             @default(0) // 0..3
+  assignedMentorId        String?
+  assignedMentor          User?           @relation("PostMentor", fields: [assignedMentorId], references: [id], onDelete: SetNull)
+  acceptedReplyId         String?         @unique // plain unique string, no FK (avoids circular relation)
+  pinned                  Boolean         @default(false) // announcements
   // Set on AI-authored posts (ENCOURAGEMENT). Staff-only, like HiveReply.aiProvider.
-  aiProvider       AiProvider?
-  kbSummary        String? // AI-distilled summary written at archive time
-  expiresAt        DateTime // createdAt + 3 days (questions); far future for announcements
-  resolvedAt       DateTime?
-  archivedAt       DateTime?
+  aiProvider              AiProvider?
+  kbSummary               String? // AI-distilled summary written at archive time
+  expiresAt               DateTime // createdAt + 3 days (questions); far future for announcements
+  resolvedAt              DateTime?
+  archivedAt              DateTime?
   // Denormalized outcome, written at the terminal transitions. Derivable from
   // events + replies, but the admin dashboard slices on these constantly and a
   // three-table join per tile is not worth it.
-  resolvedBy       HiveResolver? // who wrote the accepted answer
-  escalatedAt      DateTime?
-  escalationReason String?
+  resolvedBy              HiveResolver? // who wrote the accepted answer
+  escalatedAt             DateTime?
+  escalationReason        String?
   // AI answers posted before the hand-off. 0 = the AI never got to try
   // (sensitive topic, "need a human", or every provider failed on attempt 1).
   escalatedAfterAiReplies Int?
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
   // Full-text search is served by a GIN *expression* index over
   // to_tsvector(title||body||kbSummary) — see prisma/sql/hive_fts.sql. It adds
   // no column, so `prisma db push` stays drift-free; queries in
   // src/lib/hive/search.ts repeat the same expression so the index is used.
-  replies          HiveReply[]
-  events           HivePostEvent[]
-  reactions        HiveReaction[]
-  follows          HiveFollow[]
+  replies                 HiveReply[]
+  events                  HivePostEvent[]
+  reactions               HiveReaction[]
+  follows                 HiveFollow[]
 
   @@index([status, pinned, createdAt])
   @@index([expiresAt, status])
@@ -385,7 +398,9 @@ model HivePost {
   @@map("hive_post")
 }
 
-/** Who actually solved it — the headline number for "did the AI carry its weight". */
+/**
+ * Who actually solved it — the headline number for "did the AI carry its weight".
+ */
 enum HiveResolver {
   AI
   PEER
@@ -481,6 +496,90 @@ model HiveFollow {
   @@map("hive_follow")
 }
 
+// ── The Path: guided curriculum ───────────────────────────────────────────
+// The curriculum itself (modules, nodes, the steps each node demands) lives in
+// code — src/lib/path/curriculum.ts — for the same reason badge definitions do:
+// shipping a new node should be a code change, not a migration + seed.
+//
+// Step *completion* is likewise not stored. It is derived on read from evidence
+// that already exists: XpEvents (viz concepts), ChallengeAttempt wins, and the
+// per-lab session tables. That keeps a single source of truth — a node cannot
+// claim you mastered something the labs never recorded.
+//
+// Only the three things that cannot be derived are persisted below: the moment
+// a node was *mastered* (needed for idempotent XP + an honest transcript), the
+// daily quest (a composed-once, stable list — recomposing it mid-day would move
+// the goalposts), and the AI's weekly plan (an expensive generation, cached).
+
+/**
+ * Terminal only. LOCKED/AVAILABLE/ACTIVE are derived from prerequisites.
+ */
+model PathProgress {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nodeId     String
+  /**
+   * Snapshot of the evidence that satisfied each step — the "receipt".
+   */
+  evidence   Json?
+  masteredAt DateTime @default(now())
+
+  @@unique([userId, nodeId])
+  @@index([userId, masteredAt])
+  @@map("path_progress")
+}
+
+// One composed quest per learner per UTC day. `items` is the frozen list of
+// step references; whether each is *done* is re-derived from the same evidence
+// the path uses, so a quest item cannot be marked complete without the lab
+// actually recording the work.
+model DailyQuest {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /**
+   * UTC calendar day, "YYYY-MM-DD". Also the idempotency key for the XP grant.
+   */
+  day         String
+  items       Json
+  /**
+   * Set the first time every item is satisfied. Drives the streak.
+   */
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([userId, day])
+  @@index([userId, day])
+  @@map("daily_quest")
+}
+
+// The AI's weekly re-plan + report card. One per learner per ISO week, cached:
+// this is the only recurring AI cost the path carries, so it must not be
+// regenerated on every page view.
+model WeeklyPlan {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /**
+   * Monday of the ISO week, "YYYY-MM-DD".
+   */
+  weekOf    String
+  /**
+   * Node ids the AI wants the learner to focus on this week.
+   */
+  focus     String[] @default([])
+  /**
+   * The full structured report (wins, struggles, encouragement, bn + en).
+   */
+  report    Json
+  createdAt DateTime @default(now())
+
+  @@unique([userId, weekOf])
+  @@index([userId, createdAt])
+  @@map("weekly_plan")
+}
+
 // ── AI telemetry ──────────────────────────────────────────────────────────
 // One row per call to an AI provider — successes and failures alike. Append-only,
 // like XpEvent. This is the source of truth for the admin dashboard: who was
@@ -510,9 +609,15 @@ enum AiFeature {
   SUPPORT
   ANALOGIES
   JS_MOTION
+  /**
+   * The Path: weekly re-plan + report card.
+   */
+  PATH
 }
 
-/** Which job the model was doing. Cost and failure rates differ wildly per task. */
+/**
+ * Which job the model was doing. Cost and failure rates differ wildly per task.
+ */
 enum AiTask {
   TRIAGE
   ANSWER
@@ -520,17 +625,31 @@ enum AiTask {
   COACH
   KB_SUMMARY
   ENCOURAGEMENT
-  /** A live voice round. Tokens are client-reported — see tokensClientReported. */
+  /**
+   * A live voice round. Tokens are client-reported — see tokensClientReported.
+   */
   LIVE_SESSION
-  /** Post-session grading via a one-shot structured generateContent. */
+  /**
+   * Post-session grading via a one-shot structured generateContent.
+   */
   REPORT
-  /** Analogies: one-shot card generation. */
+  /**
+   * Analogies: one-shot card generation.
+   */
   GENERATE
-  /** JS Motion: explain a step or an error to the learner. */
+  /**
+   * JS Motion: explain a step or an error to the learner.
+   */
   EXPLAIN
+  /**
+   * The Path: re-plan the coming week and write the report card.
+   */
+  PLAN
 }
 
-/** Coarse bucket for dashboards; `errorMessage` keeps the detail. */
+/**
+ * Coarse bucket for dashboards; `errorMessage` keeps the detail.
+ */
 enum AiErrorKind {
   RATE_LIMITED
   AUTH
@@ -547,24 +666,40 @@ model AiUsageEvent {
   id        String     @id @default(cuid())
   feature   AiFeature  @default(HIVE) // the default backfills every pre-existing row correctly
   provider  AiProvider
+  /**
+   * Which API key served the call, identified by its ENV VAR NAME
+   * ("GEMINI_API_KEY_1"), never its value. Null on rows written before keys were
+   * rotated, and on NO_PROVIDER rows where no key was ever reached.
+   */
+  keyId     String?
   model     String
   task      AiTask
   success   Boolean
-  /** 1..3 for ANSWER; null for one-shot tasks. */
+  /**
+   * 1..3 for ANSWER; null for one-shot tasks.
+   */
   aiAttempt Int?
-  /** Position in the failover chain for this call: 1 = first provider tried. */
+  /**
+   * Position in the failover chain for this call: 1 = first provider tried.
+   */
   tryIndex  Int        @default(1)
 
-  latencyMs      Int
-  /** Wall clock of a live voice round. Distinct from latencyMs, which is one call. */
-  durationMs     Int?
-  promptTokens   Int?
-  responseTokens Int?
-  totalTokens    Int?
-  /** True when the browser reported the counts (live rounds). Treat as untrusted. */
+  latencyMs            Int
+  /**
+   * Wall clock of a live voice round. Distinct from latencyMs, which is one call.
+   */
+  durationMs           Int?
+  promptTokens         Int?
+  responseTokens       Int?
+  totalTokens          Int?
+  /**
+   * True when the browser reported the counts (live rounds). Treat as untrusted.
+   */
   tokensClientReported Boolean @default(false)
-  /** The model's self-reported confidence on ANSWER calls. */
-  confidence     Int?
+  /**
+   * The model's self-reported confidence on ANSWER calls.
+   */
+  confidence           Int?
 
   errorKind    AiErrorKind?
   errorMessage String?
@@ -590,25 +725,61 @@ model AiUsageEvent {
   @@index([success, errorKind, createdAt])
   @@index([feature, createdAt])
   @@index([feature, task, provider, createdAt])
+  @@index([keyId, task, createdAt])
   @@map("ai_usage_event")
 }
 
-// Last-observed rate-limit health per AI provider, one row each. The live health
-// lives in an in-memory Map in src/lib/hive/providers.ts, which is per-serverless-
-// instance: the admin dashboard runs in an instance that never made an AI call,
-// so it can't read that Map. This table is the durable, cross-instance mirror the
-// dashboard reads. Written best-effort from park()/recordRateLimit(); never on the
-// hot path's critical section.
-model ProviderHealth {
-  provider      AiProvider @id
-  /** Requests left in the current window. Groq only — Gemini/Ollama send no header. */
+// Last-observed rate-limit health per API KEY, one row each. The live health lives
+// in an in-memory Map in src/lib/ai-keys/pool.ts, which is per-serverless-instance:
+// the admin dashboard runs in an instance that never made an AI call, so it can't
+// read that Map. This table is the durable, cross-instance mirror the dashboard
+// reads. Written best-effort from park()/recordRateLimit(); never on the hot path's
+// critical section.
+//
+// The PK is the key's ENV VAR NAME, never its value — safe to log, store and show.
+// Keys are discovered from the environment by convention, so rows appear on their
+// own the first time a newly added key is used; a key removed from the env leaves a
+// stale row behind, which the dashboard drops because it merges against the pool.
+model ApiKeyHealth {
+  keyId         String     @id
+  provider      AiProvider
+  /**
+   * Requests left in the current window. Groq only — Gemini/Ollama send no header.
+   */
   remaining     Int?
-  /** When the parked provider frees up. Read side computes remaining ms from this. */
+  /**
+   * When the parked key frees up. Read side computes remaining ms from this.
+   */
   cooldownUntil DateTime?
+  /**
+   * Per-key kill switch. The provider-level switches are AdminSettings, but keys
+   * are dynamic — there is no static settings key to name one — so a key's switch
+   * lives on its own row.
+   */
+  adminParked   Boolean    @default(false)
   lastError     String?
   updatedAt     DateTime   @updatedAt
 
-  @@map("provider_health")
+  @@map("api_key_health")
+}
+
+// Which API key minted the ephemeral token for a live voice round.
+//
+// A live round runs browser <-> Google directly, and the browser reports its token
+// usage back to /api/ai-usage/live afterwards. The browser must NOT be told which
+// key it is on — client-reported telemetry would then let a user poison another
+// key's stats — so the token route records the link here and the usage endpoint
+// joins on sessionId to stamp the row. No FK: the session tables are per-lab, and
+// usage history outlives them.
+model LiveTokenIssue {
+  sessionId String    @id
+  feature   AiFeature
+  keyId     String
+  model     String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@map("live_token_issue")
 }
 
 // type: 'reply' | 'bee_approved' | 'accepted' | 'escalated' | 'mentor_assigned'

@@ -114,8 +114,23 @@ function codeHash(src: string): string {
 }
 
 // Which demo teaches which concept — completing (stepping to the end of) one of
-// these awards its concept badge. Keys are DEMO_EXAMPLES ids.
+// these awards its concept XP, and is the evidence The Path checks for a "see
+// it" step. Keys are DEMO_EXAMPLES ids; values must exist in VIZ_CONCEPTS.
 const CONCEPT_BY_EXAMPLE: Record<string, string> = {
+  conditional: 'conditionals',
+  fizzbuzz: 'conditionals',
+  'for-loop-sum': 'loops',
+  'while-countdown': 'loops',
+  'for-of': 'loops',
+  'nested-loops': 'loops',
+  'array-max': 'arrays',
+  'array-mutation': 'arrays',
+  'switch-methods': 'array-methods',
+  'function-call': 'functions',
+  aliasing: 'references',
+  destructuring: 'destructuring',
+  hoisting: 'hoisting',
+  'two-pointer': 'two-pointers',
   recursion: 'recursion',
   closure: 'closures',
   'event-loop': 'event-loop',
@@ -275,18 +290,28 @@ export default function Home() {
     debounceRef.current = setTimeout(() => runQuiet(value), 350)
   }, [runQuiet])
 
-  // Load shared code from the URL on first mount.
+  // Load shared code from the URL on first mount, or the demo The Path sent the
+  // learner here to step through (?demo=<DEMO_EXAMPLES id>). Shared code wins:
+  // it is the more specific intent.
   useEffect(() => {
     const shared = readCodeFromLocation()
+    // Hydration-safe: the URL is only readable on the client, so this must
+    // happen in an effect rather than during render / state init.
+    /* eslint-disable react-hooks/set-state-in-effect */
     if (shared) {
-      // Hydration-safe: the URL is only readable on the client, so this must
-      // happen in an effect rather than during render / state init.
-      /* eslint-disable react-hooks/set-state-in-effect */
       setCode(shared)
       setActiveExampleId('')
       runQuiet(shared)
-      /* eslint-enable react-hooks/set-state-in-effect */
+      return
     }
+    const wanted = new URLSearchParams(window.location.search).get('demo')
+    const example = wanted ? DEMO_EXAMPLES.find((ex) => ex.id === wanted) : undefined
+    if (example) {
+      setCode(example.code)
+      setActiveExampleId(example.id)
+      runQuiet(example.code)
+    }
+    /* eslint-enable react-hooks/set-state-in-effect */
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

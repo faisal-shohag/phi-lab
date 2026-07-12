@@ -17,6 +17,13 @@ import { startScreenShare, type ScreenShare } from './screen-share'
 import { SUPPORT_SECONDS } from './prompt'
 import type { InterviewErrorCode } from '@/lib/interview/errors'
 import { useLiveUsageReporter } from '@/lib/ai-usage/live-reporter'
+import {
+  beaconAbandon,
+  END_OK_RESPONSE,
+  minElapsedSeconds,
+  TOO_EARLY_RESPONSE,
+  waitForFarewell,
+} from '@/lib/labs/end-session'
 
 const LIVE_MODEL = 'gemini-3.1-flash-live-preview'
 const WRAP_UP_AT = 40
@@ -117,6 +124,10 @@ export function useSupport(): UseSupport {
   const mutedRef = useRef(false)
   const wrappedUpRef = useRef(false)
   const finishingRef = useRef(false)
+  /** The supporter has called end_session and is saying goodbye. */
+  const endingRef = useRef(false)
+  /** The call's full length, for the end_session guard. Mirrors roundTotal. */
+  const roundTotalRef = useRef(SUPPORT_SECONDS)
   const intentionalCloseRef = useRef(false)
   const reconnectingRef = useRef(false)
   const resumeHandleRef = useRef<string | null>(null)
@@ -167,6 +178,17 @@ export function useSupport(): UseSupport {
   }, [])
 
   const teardown = useCallback(() => {
+    // Unmounting mid-call (tab closed, navigated away) never reaches the /end
+    // route, so the row would sit 'active' forever — and an active row holds one
+    // of the scarce concurrency slots. Tell the server on the way out.
+    if (
+      (phaseRef.current === 'live' || phaseRef.current === 'reconnecting') &&
+      !finishingRef.current &&
+      !endingRef.current
+    ) {
+      beaconAbandon('SUPPORT', sessionIdRef.current)
+    }
+
     stopTimers()
     intentionalCloseRef.current = true
     stopShare()
@@ -229,6 +251,20 @@ export function useSupport(): UseSupport {
   const finishRef = useRef<() => Promise<void>>(() => Promise.resolve())
   useEffect(() => { finishRef.current = finish }, [finish])
 
+  // The supporter asked to hang up. Let it finish saying goodbye, THEN close —
+  // finish() kills the socket, so calling it straight away would cut the farewell
+  // off mid-word. The countdown stops first so the clock can't beat us to it.
+  const gracefulFinish = useCallback(async () => {
+    if (endingRef.current || finishingRef.current) return
+    endingRef.current = true
+    stopTimers()
+    await waitForFarewell(() => playbackRef.current?.pendingSeconds() ?? 0)
+    await finishRef.current()
+  }, [stopTimers])
+
+  const gracefulFinishRef = useRef<() => Promise<void>>(() => Promise.resolve())
+  useEffect(() => { gracefulFinishRef.current = gracefulFinish }, [gracefulFinish])
+
   const handleMessage = useCallback((msg: LiveServerMessage) => {
     // Token counts for this session only reach us here — the socket is
     // browser-to-Google. Cumulative, so the reporter keeps the latest.
@@ -239,18 +275,21 @@ export function useSupport(): UseSupport {
       resumeHandleRef.current = resume.newHandle
     }
 
-    // The supporter can end the call itself when the learner is done.
-    const calls = msg.toolCall?.functionCalls ?? []
-    for (const call of calls) {
-      if (call.name === 'end_session') {
-        try {
-          sessionRef.current?.sendToolResponse({
-            functionResponses: [{ id: call.id, name: call.name, response: { ok: true } }],
-          })
-        } catch {}
-        // Let any final goodbye audio play, then hang up gracefully.
-        setTimeout(() => { void finishRef.current() }, 400)
-      }
+    // The supporter can end the call itself when the learner is done — but not in
+    // the opening stretch, where a misread pause would drop a learner who still
+    // needs help. A refusal is not an error: the model just keeps supporting.
+    for (const call of msg.toolCall?.functionCalls ?? []) {
+      if (call.name !== 'end_session') continue
+      const elapsed = roundTotalRef.current - secondsLeftRef.current
+      const tooEarly = elapsed < minElapsedSeconds(roundTotalRef.current)
+      try {
+        sessionRef.current?.sendToolResponse({
+          functionResponses: [
+            { id: call.id, name: call.name, response: tooEarly ? TOO_EARLY_RESPONSE : END_OK_RESPONSE },
+          ],
+        })
+      } catch {}
+      if (!tooEarly) void gracefulFinishRef.current()
     }
 
     const content = msg.serverContent
@@ -332,6 +371,7 @@ export function useSupport(): UseSupport {
       secondsLeftRef.current = roundSeconds
       setSecondsLeft(roundSeconds)
       setRoundTotal(roundSeconds)
+      roundTotalRef.current = roundSeconds
     }
 
     // Start the usage clock on a fresh session only. A reconnect continues the
@@ -494,10 +534,12 @@ export function useSupport(): UseSupport {
     setSecondsLeft(SUPPORT_SECONDS)
     secondsLeftRef.current = SUPPORT_SECONDS
     setRoundTotal(SUPPORT_SECONDS)
+    roundTotalRef.current = SUPPORT_SECONDS
     setMuted(false)
     mutedRef.current = false
     wrappedUpRef.current = false
     finishingRef.current = false
+    endingRef.current = false
     reconnectingRef.current = false
     resumeHandleRef.current = null
     setFeedbackSent(false)
@@ -616,6 +658,7 @@ export function useSupport(): UseSupport {
     teardown()
     finishingRef.current = false
     wrappedUpRef.current = false
+    endingRef.current = false
     sessionIdRef.current = null
     resumeHandleRef.current = null
     setPhase('idle')
@@ -626,6 +669,7 @@ export function useSupport(): UseSupport {
     setSecondsLeft(SUPPORT_SECONDS)
     secondsLeftRef.current = SUPPORT_SECONDS
     setRoundTotal(SUPPORT_SECONDS)
+    roundTotalRef.current = SUPPORT_SECONDS
     setMuted(false)
     mutedRef.current = false
     setCategory(null)

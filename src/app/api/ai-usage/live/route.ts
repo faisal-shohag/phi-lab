@@ -13,17 +13,19 @@
 //
 // Idempotent via the `ai_usage_live_once` partial unique index: the hook flushes
 // on normal end AND on tab close, and exactly one row must survive.
+//
+// The browser is never told which API key its round ran on — it could then lie
+// about it and poison another key's stats. The token route recorded that when it
+// minted (LiveTokenIssue), so the key is looked up here, server-side.
 import { requireUser } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { recordAiUsageStrict } from '@/lib/ai-usage/record'
+import { LIVE_MODEL } from '@/lib/ai-keys/live-token'
 import type { AiFeature } from '@/generated/prisma/client'
 
 /** Generous ceilings. A real round cannot plausibly exceed these. */
 const MAX_TOKENS = 2_000_000
 const MAX_DURATION_MS = 2 * 60 * 60 * 1000
-
-/** The Live model every lab connects to. Kept here so the row records the truth. */
-const LIVE_MODEL = 'gemini-3.1-flash-live-preview'
 
 const LIVE_FEATURES = ['INTERVIEW', 'FEYNMAN', 'ENGLISH', 'SUPPORT'] as const
 type LiveFeature = (typeof LIVE_FEATURES)[number]
@@ -84,12 +86,20 @@ export async function POST(request: Request) {
   const responseTokens = clamp(body.responseTokens, MAX_TOKENS)
   const totalTokens = clamp(body.totalTokens, MAX_TOKENS)
 
+  // Which key minted this session's token. Null only if the attribution write
+  // lost its race with the round ending — the usage still counts, it just lands
+  // in the dashboard's unattributed bucket.
+  const issued = await prisma.liveTokenIssue
+    .findUnique({ where: { sessionId }, select: { keyId: true, model: true } })
+    .catch(() => null)
+
   try {
     await recordAiUsageStrict({
       feature: feature as AiFeature,
       task: 'LIVE_SESSION',
       provider: 'GEMINI',
-      model: LIVE_MODEL,
+      keyId: issued?.keyId,
+      model: issued?.model ?? LIVE_MODEL,
       success: true,
       // A live round is not one request, so per-call latency is meaningless here.
       // The wall clock lives in durationMs.

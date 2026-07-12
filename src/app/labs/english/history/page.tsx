@@ -17,6 +17,8 @@ const STATUS_STYLES: Record<string, string> = {
   COMPLETED: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300',
   FAILED: 'bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300',
   IN_PROGRESS: 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300',
+  // Walked away mid-session. Muted: it is not a failure, it just never happened.
+  ABANDONED: 'bg-muted text-muted-foreground',
 }
 
 function scoreChip(score: number): string {

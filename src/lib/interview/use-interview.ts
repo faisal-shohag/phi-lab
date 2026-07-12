@@ -11,6 +11,13 @@ import { createMicStream, createPlaybackQueue, type MicStream, type PlaybackQueu
 import type { InterviewReport } from './report-types'
 import type { InterviewErrorCode } from './errors'
 import { useLiveUsageReporter } from '@/lib/ai-usage/live-reporter'
+import {
+  beaconAbandon,
+  END_OK_RESPONSE,
+  minElapsedSeconds,
+  TOO_EARLY_RESPONSE,
+  waitForFarewell,
+} from '@/lib/labs/end-session'
 
 const LIVE_MODEL = 'gemini-3.1-flash-live-preview'
 const WRAP_UP_AT = 15 // seconds remaining when we nudge the model to wrap up.
@@ -111,10 +118,14 @@ export function useInterview(): UseInterview {
   const mutedRef = useRef(false)
   const wrappedUpRef = useRef(false)
   const finishingRef = useRef(false)
+  /** The interviewer has called end_session and is saying goodbye. */
+  const endingRef = useRef(false)
   const intentionalCloseRef = useRef(false)
   const reconnectingRef = useRef(false)
   const resumeHandleRef = useRef<string | null>(null)
   const secondsLeftRef = useRef(ROUND_SECONDS)
+  /** The round's full length, for the end_session guard. Mirrors roundTotal. */
+  const roundTotalRef = useRef(ROUND_SECONDS)
   const sessionIdRef = useRef<string | null>(null)
   const transcriptRef = useRef<TranscriptEntry[]>([])
   const topicRef = useRef<string | null>(null)
@@ -158,6 +169,17 @@ export function useInterview(): UseInterview {
   }, [])
 
   const teardown = useCallback(() => {
+    // Unmounting mid-round (tab closed, navigated away) is the one exit that
+    // produces no report — so it is the one that has to say so, or the row is
+    // stranded at IN_PROGRESS forever. A round that is finishing is not abandoned.
+    if (
+      (phaseRef.current === 'live' || phaseRef.current === 'reconnecting') &&
+      !finishingRef.current &&
+      !endingRef.current
+    ) {
+      beaconAbandon('INTERVIEW', sessionIdRef.current)
+    }
+
     stopTimers()
     intentionalCloseRef.current = true
     micRef.current?.stop()
@@ -234,6 +256,20 @@ export function useInterview(): UseInterview {
   const finishRef = useRef<() => Promise<void>>(() => Promise.resolve())
   useEffect(() => { finishRef.current = finish }, [finish])
 
+  // The interviewer asked to hang up. Let it finish saying goodbye, THEN close —
+  // finish() kills the socket, so calling it straight away would cut the farewell
+  // off mid-word. The countdown stops first so the clock can't beat us to it.
+  const gracefulFinish = useCallback(async () => {
+    if (endingRef.current || finishingRef.current) return
+    endingRef.current = true
+    stopTimers()
+    await waitForFarewell(() => playbackRef.current?.pendingSeconds() ?? 0)
+    await finishRef.current()
+  }, [stopTimers])
+
+  const gracefulFinishRef = useRef<() => Promise<void>>(() => Promise.resolve())
+  useEffect(() => { gracefulFinishRef.current = gracefulFinish }, [gracefulFinish])
+
   const handleMessage = useCallback((msg: LiveServerMessage) => {
     // Token counts for this round only reach us here — the socket is
     // browser-to-Google. Cumulative, so the reporter keeps the latest.
@@ -243,6 +279,23 @@ export function useInterview(): UseInterview {
     const resume = msg.sessionResumptionUpdate
     if (resume?.resumable && resume.newHandle) {
       resumeHandleRef.current = resume.newHandle
+    }
+
+    // The interviewer can end the round itself once the candidate is done — but
+    // not in the opening stretch, where a misread pause would cost them the whole
+    // round. A refusal is not an error: the model just keeps interviewing.
+    for (const call of msg.toolCall?.functionCalls ?? []) {
+      if (call.name !== 'end_session') continue
+      const elapsed = roundTotalRef.current - secondsLeftRef.current
+      const tooEarly = elapsed < minElapsedSeconds(roundTotalRef.current)
+      try {
+        sessionRef.current?.sendToolResponse({
+          functionResponses: [
+            { id: call.id, name: call.name, response: tooEarly ? TOO_EARLY_RESPONSE : END_OK_RESPONSE },
+          ],
+        })
+      } catch {}
+      if (!tooEarly) void gracefulFinishRef.current()
     }
 
     const content = msg.serverContent
@@ -333,6 +386,7 @@ export function useInterview(): UseInterview {
       secondsLeftRef.current = roundSeconds
       setSecondsLeft(roundSeconds)
       setRoundTotal(roundSeconds)
+      roundTotalRef.current = roundSeconds
     }
 
     // Start the usage clock on a fresh round only. A reconnect continues the
@@ -436,10 +490,12 @@ export function useInterview(): UseInterview {
     setSecondsLeft(ROUND_SECONDS)
     secondsLeftRef.current = ROUND_SECONDS
     setRoundTotal(ROUND_SECONDS)
+    roundTotalRef.current = ROUND_SECONDS
     setMuted(false)
     mutedRef.current = false
     wrappedUpRef.current = false
     finishingRef.current = false
+    endingRef.current = false
     reconnectingRef.current = false
     resumeHandleRef.current = null
     sessionIdRef.current = null
@@ -510,6 +566,7 @@ export function useInterview(): UseInterview {
     reconnectingRef.current = false
     teardown()
     finishingRef.current = false
+    endingRef.current = false
     wrappedUpRef.current = false
     sessionIdRef.current = null
     resumeHandleRef.current = null
@@ -522,6 +579,7 @@ export function useInterview(): UseInterview {
     setSecondsLeft(ROUND_SECONDS)
     secondsLeftRef.current = ROUND_SECONDS
     setRoundTotal(ROUND_SECONDS)
+    roundTotalRef.current = ROUND_SECONDS
     setMuted(false)
     mutedRef.current = false
   }, [teardown, setPhase])

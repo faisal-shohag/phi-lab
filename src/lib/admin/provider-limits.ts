@@ -1,34 +1,39 @@
-// Vendor rate-limit health per AI provider, for the admin dashboard. Read-only.
+// Vendor rate-limit health per API KEY, for the admin dashboard. Read-only.
 //
-// Source of truth is the `provider_health` table, written best-effort by the Hive
-// failover engine (src/lib/hive/providers.ts). It's a durable mirror of that
-// engine's in-memory Map, which the dashboard can't read because it lives in a
-// different serverless instance. Merged here with two things only the code knows:
-// whether a key is configured, and the admin manual-park flags.
+// Source of truth is the `api_key_health` table, written best-effort by the key
+// pool (src/lib/ai-keys/pool.ts). It's a durable mirror of that pool's in-memory
+// Map, which the dashboard can't read because it lives in a different serverless
+// instance. Merged here with two things only the environment knows: which keys
+// exist at all, and the provider-level manual-park flags.
+//
+// The merge direction matters. The POOL is the list of keys — a key present in
+// the environment but never yet called has no health row, and must still show up
+// (as "never used"), because that is exactly the signal you look for after adding
+// a key. And a key deleted from the environment leaves a stale health row behind,
+// which is dropped here rather than shown as a key that no longer exists.
 //
 // Caveats worth stating on the page: only Groq returns a remaining-requests
 // header, so Gemini/Ollama `remaining` is always null; and every number is
-// last-observed — it moves only when a provider is actually called or rate limited.
+// last-observed — it moves only when a key is actually used or rate limited.
 import { prisma } from '@/lib/prisma'
-import { providerConfigured } from '@/lib/hive/providers'
+import { allKeys, type ProviderId } from '@/lib/ai-keys/pool'
 import { getSettings } from '@/lib/admin/settings'
-import type { AiProvider } from '@/generated/prisma/client'
 
-type ProviderId = 'gemini' | 'ollama' | 'groq'
+/** Only Groq sends x-ratelimit-* headers. The others tell us nothing until they 429. */
+const REPORTS_REMAINING: Record<ProviderId, boolean> = {
+  gemini: false,
+  ollama: false,
+  groq: true,
+}
 
-/** Display order matches the failover priority: Gemini, Ollama, Groq. */
-const PROVIDERS: { id: ProviderId; enum: AiProvider; reportsRemaining: boolean }[] = [
-  { id: 'gemini', enum: 'GEMINI', reportsRemaining: false },
-  { id: 'ollama', enum: 'OLLAMA', reportsRemaining: false },
-  { id: 'groq', enum: 'GROQ', reportsRemaining: true },
-]
-
-export interface ProviderLimit {
+export interface KeyLimit {
+  /** The key's env var name — never its value. */
+  keyId: string
   provider: ProviderId
-  /** API key present in the environment. */
-  configured: boolean
-  /** Admin manual kill switch (flag.provider.*.parked), distinct from cooldown. */
+  /** Switched off by an admin: either this key, or its whole provider. */
   parked: boolean
+  /** True when the whole provider is parked, not just this key. */
+  providerParked: boolean
   /** True only for Groq; false means the vendor sends no remaining-count header. */
   reportsRemaining: boolean
   /** Last-observed requests left in the window; null when unknown/not reported. */
@@ -36,31 +41,27 @@ export interface ProviderLimit {
   /** Milliseconds until an automatic rate-limit cooldown frees up; 0 = available. */
   cooldownMsLeft: number
   lastError: string | null
-  /** When the snapshot row was last written; null if it never has been. */
+  /** When the health row was last written; null means this key has never been used. */
   updatedAt: string | null
 }
 
-export async function providerLimits(): Promise<ProviderLimit[]> {
-  const [rows, settings] = await Promise.all([
-    prisma.providerHealth.findMany(),
-    getSettings(),
-  ])
-  const configured = providerConfigured()
-  const byProvider = new Map(rows.map((r) => [r.provider, r]))
+export async function keyLimits(): Promise<KeyLimit[]> {
+  const [rows, settings] = await Promise.all([prisma.apiKeyHealth.findMany(), getSettings()])
+  const byKey = new Map(rows.map((r) => [r.keyId, r]))
   const now = Date.now()
 
-  return PROVIDERS.map(({ id, enum: enumId, reportsRemaining }) => {
-    const row = byProvider.get(enumId)
-    const cooldownMsLeft = row?.cooldownUntil
-      ? Math.max(0, row.cooldownUntil.getTime() - now)
-      : 0
+  return allKeys().map((key) => {
+    const row = byKey.get(key.keyId)
+    const providerParked = settings[`flag.provider.${key.provider}.parked`]
+    const reportsRemaining = REPORTS_REMAINING[key.provider]
     return {
-      provider: id,
-      configured: configured[id],
-      parked: settings[`flag.provider.${id}.parked`],
+      keyId: key.keyId,
+      provider: key.provider,
+      parked: providerParked || (row?.adminParked ?? false),
+      providerParked,
       reportsRemaining,
       remaining: reportsRemaining ? (row?.remaining ?? null) : null,
-      cooldownMsLeft,
+      cooldownMsLeft: row?.cooldownUntil ? Math.max(0, row.cooldownUntil.getTime() - now) : 0,
       lastError: row?.lastError ?? null,
       updatedAt: row?.updatedAt.toISOString() ?? null,
     }

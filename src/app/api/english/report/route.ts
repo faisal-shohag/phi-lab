@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from '@google/genai'
+import { Type } from '@google/genai'
 import { scenarioById } from '@/lib/english/scenarios'
 import type { EnglishReport } from '@/lib/english/report-types'
 import { requireUser } from '@/lib/auth-server'
@@ -6,12 +6,13 @@ import { errorResponse } from '@/lib/interview/errors'
 import { prisma } from '@/lib/prisma'
 import { awardXp } from '@/lib/gamification/award'
 import { englishXp } from '@/lib/gamification/reasons'
-import { recordAiUsage } from '@/lib/ai-usage/record'
-import { normalizeTokens } from '@/lib/ai-usage/tokens'
+import { generateStructured } from '@/lib/hive/providers'
 
 // Grades the learner's spoken technical English from a practice transcript.
-
-const REPORT_MODEL = 'gemini-3.1-flash-lite'
+//
+// Grading goes through the shared failover engine (src/lib/hive/providers.ts):
+// it rotates across every Gemini key, falls back to Ollama/Groq, and writes the
+// AiUsageEvent rows — including the attempts that failed.
 
 type Role = 'coach' | 'learner'
 interface TurnEntry {
@@ -75,9 +76,6 @@ function notEnoughSignal(scenarioLabel: string): EnglishReport {
 }
 
 export async function POST(request: Request) {
-  const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) return errorResponse('SERVER_ERROR', 'GEMINI_API_KEY is not configured on the server.')
-
   const user = await requireUser()
   if (!user) return errorResponse('AUTH_REQUIRED')
 
@@ -127,49 +125,14 @@ export async function POST(request: Request) {
     .filter(Boolean)
     .join('\n')
 
-  // Telemetry context shared by the success and failure paths below.
-  const startedAt = Date.now()
-  const usageBase = {
-    feature: 'ENGLISH',
-    task: 'REPORT',
-    provider: 'GEMINI',
-    model: REPORT_MODEL,
-    tryIndex: 1,
-    sessionId,
-    userId: user.id,
-  } as const
-
   try {
-    const ai = new GoogleGenAI({ apiKey })
-    const response = await ai.models.generateContent({
-      model: REPORT_MODEL,
-      contents: prompt,
-      config: { responseMimeType: 'application/json', responseSchema: REPORT_SCHEMA },
-    })
-
-    const text = response.text
-    if (!text) {
-      void recordAiUsage({
-        ...usageBase,
-        success: false,
-        latencyMs: Date.now() - startedAt,
-        tokens: normalizeTokens(response.usageMetadata),
-        errorKind: 'TRUNCATED',
-        errorMessage: 'the model returned an empty report',
-      })
-      await prisma.englishSession.update({ where: { id: sessionId }, data: { status: 'FAILED' } })
-      return errorResponse('REPORT_FAILED', 'The model returned an empty report.')
-    }
-
-    // Recorded only once the payload actually parses — a malformed body is an
-    // INVALID_JSON failure, and it falls to the catch below.
-    const report = JSON.parse(text) as EnglishReport
-
-    void recordAiUsage({
-      ...usageBase,
-      success: true,
-      latencyMs: Date.now() - startedAt,
-      tokens: normalizeTokens(response.usageMetadata),
+    // The engine records the usage row per attempt, empty/malformed replies
+    // included, and fails over to the next key or provider on its own.
+    const report = await generateStructured<EnglishReport>(prompt, REPORT_SCHEMA, {
+      feature: 'ENGLISH',
+      task: 'REPORT',
+      sessionId,
+      userId: user.id,
     })
 
     await prisma.englishSession.update({
@@ -196,14 +159,10 @@ export async function POST(request: Request) {
 
     return Response.json(report)
   } catch (err) {
+    // Every key and provider failed, or the reply wouldn't parse. FAILED is what
+    // lets the UI offer "Try again": a retry gets a fresh candidate chain, and by
+    // then a parked key may well have freed up.
     const message = err instanceof Error ? err.message : 'Unknown error'
-    void recordAiUsage({
-      ...usageBase,
-      success: false,
-      latencyMs: Date.now() - startedAt,
-      errorKind: err instanceof SyntaxError ? 'INVALID_JSON' : 'UNKNOWN',
-      errorMessage: message,
-    })
     await prisma.englishSession.update({ where: { id: sessionId }, data: { status: 'FAILED' } }).catch(() => {})
     return errorResponse('REPORT_FAILED', `Failed to generate report: ${message}`)
   }

@@ -1,7 +1,36 @@
-// Ad-hoc check that every Hive AI provider returns JSON matching the triage
-// schema, and reports the rate-limit signal each one exposes.
+// Ad-hoc check that every AI key in the environment is alive: one real call per
+// KEY (not per provider), returning JSON that matches the triage schema, plus the
+// rate-limit signal each vendor exposes.
 //   node --env-file=.env scripts/probe-hive-providers.mjs
-import { readFileSync } from 'node:fs'
+//
+// This mirrors the discovery rule in src/lib/ai-keys/pool.ts. Run it after adding
+// a key to the environment: if the new key does not appear in this list, the app
+// will not use it either, and the naming is wrong.
+
+/** Same convention the pool uses: PREFIX or PREFIX_<n>, nothing else. */
+const PATTERN = {
+  gemini: /^GEMINI_API_KEY(?:_(\d+))?$/,
+  ollama: /^OLLAMA_API_KEY(?:_(\d+))?$/,
+  groq: /^GROQ_API_KEY(?:_(\d+))?$/,
+}
+
+function discover() {
+  const keys = []
+  for (const [provider, pattern] of Object.entries(PATTERN)) {
+    const seen = new Set()
+    const found = []
+    for (const [name, raw] of Object.entries(process.env)) {
+      const match = pattern.exec(name)
+      if (!match) continue
+      const value = raw?.trim()
+      if (!value || seen.has(value)) continue // dedupe by value, like the pool
+      seen.add(value)
+      found.push({ keyId: name, provider, value, order: match[1] === undefined ? -1 : Number(match[1]) })
+    }
+    keys.push(...found.sort((a, b) => a.order - b.order))
+  }
+  return keys
+}
 
 const SCHEMA = {
   type: 'OBJECT',
@@ -66,20 +95,20 @@ const rl = (res) => {
   return rem === null ? 'none' : `remaining=${rem} reset=${reset}`
 }
 
-async function gemini() {
+async function gemini(key) {
   const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY_2 },
+    headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
     body: JSON.stringify({ contents: [{ parts: [{ text: PROMPT }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: SCHEMA } }),
   })
   const data = await res.json()
   return { status: res.status, ratelimit: rl(res), text: data?.candidates?.[0]?.content?.parts?.[0]?.text }
 }
 
-async function groq() {
+async function groq(key) {
   const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env.GROQ_API_KEY}` },
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
     body: JSON.stringify({
       model: 'openai/gpt-oss-20b',
       messages: [{ role: 'user', content: PROMPT }],
@@ -90,28 +119,38 @@ async function groq() {
   return { status: res.status, ratelimit: rl(res), text: data?.choices?.[0]?.message?.content }
 }
 
-async function ollama() {
+async function ollama(key) {
   const instructed = `${PROMPT}\n\nReply with a single JSON object and nothing else — no prose, no markdown fence.\nIt must match this JSON Schema exactly:\n${JSON.stringify(toJsonSchema(SCHEMA))}`
   const res = await fetch('https://ollama.com/api/chat', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env.OLLAMA_API_KEY}` },
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
     body: JSON.stringify({ model: 'gemma3:27b', stream: false, messages: [{ role: 'user', content: instructed }] }),
   })
   const data = await res.json()
   return { status: res.status, ratelimit: rl(res), text: extractJson(data?.message?.content ?? '') }
 }
 
-for (const [name, fn] of Object.entries({ gemini, ollama, groq })) {
+const CALL = { gemini, ollama, groq }
+
+const keys = discover()
+if (keys.length === 0) {
+  console.log('No API keys found in the environment. Did you pass --env-file=.env ?')
+  process.exit(1)
+}
+console.log(`Discovered ${keys.length} key(s): ${keys.map((k) => k.keyId).join(', ')}\n`)
+
+for (const key of keys) {
+  const label = key.keyId.padEnd(18)
   try {
-    const r = await fn()
+    const r = await CALL[key.provider](key.value)
     let verdict = 'INVALID JSON'
     try {
       const obj = JSON.parse(r.text)
       const ok = ['tags', 'topic', 'severity', 'sensitive'].every((k) => k in obj)
       verdict = ok ? `OK  topic=${obj.topic} severity=${obj.severity} sensitive=${obj.sensitive}` : `MISSING KEYS: ${JSON.stringify(obj).slice(0, 90)}`
     } catch {}
-    console.log(`${name.padEnd(7)} http=${r.status}  ratelimit=${r.ratelimit}\n        ${verdict}`)
+    console.log(`${label} ${key.provider.padEnd(7)} http=${r.status}  ratelimit=${r.ratelimit}\n${' '.repeat(19)}${verdict}`)
   } catch (e) {
-    console.log(`${name.padEnd(7)} THREW: ${e.message}`)
+    console.log(`${label} ${key.provider.padEnd(7)} THREW: ${e.message}`)
   }
 }

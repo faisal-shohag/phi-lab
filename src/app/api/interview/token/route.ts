@@ -1,4 +1,4 @@
-import { GoogleGenAI, Modality } from '@google/genai'
+import { Modality } from '@google/genai'
 import {
   buildSystemInstruction,
   characterById,
@@ -13,17 +13,24 @@ import { errorResponse } from '@/lib/interview/errors'
 import { prisma } from '@/lib/prisma'
 import { getSetting } from '@/lib/admin/settings'
 import { isSuspended } from '@/lib/admin/suspension'
+import { LIVE_MODEL, mintLiveToken } from '@/lib/ai-keys/live-token'
+import { keysFor } from '@/lib/ai-keys/pool'
+import { END_SESSION_TOOL } from '@/lib/labs/end-session'
 
 // Mints a single-use ephemeral token so the browser can open a Gemini Live
-// session without ever seeing GEMINI_API_KEY. The full Live config (voice,
+// session without ever seeing a Gemini API key. The full Live config (voice,
 // language, transcription, persona, and session resumption) is LOCKED into the
 // token via `liveConnectConstraints.config` — connecting from the browser with
 // the config at connect-time fails with a server-side 1011 for this model.
 //
+// The key is drawn from the rotating pool (src/lib/ai-keys/pool.ts), so a round
+// survives one key being rate limited, and the dashboard can tell you which key
+// paid for it.
+//
 // This is also the enforcement choke point for the admin kill switch, the daily
 // cap, and account suspension: no token, no round.
 
-export const LIVE_MODEL = 'gemini-3.1-flash-live-preview'
+export { LIVE_MODEL }
 
 function startOfTodayUTC(): Date {
   const d = new Date()
@@ -31,9 +38,8 @@ function startOfTodayUTC(): Date {
 }
 
 export async function POST(request: Request) {
-  const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) {
-    return errorResponse('SERVER_ERROR', 'GEMINI_API_KEY is not configured on the server.')
+  if (keysFor('gemini').length === 0) {
+    return errorResponse('SERVER_ERROR', 'No Gemini API key is configured on the server.')
   }
 
   const user = await requireUser()
@@ -103,45 +109,44 @@ export async function POST(request: Request) {
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey })
     const now = Date.now()
     const speechCode = languageById(language)?.speechCode ?? 'en-US'
     // One resolve, used twice: the prompt's pacing and the client's countdown
     // must agree, or the interviewer wraps up at a different time than the timer.
     const roundSeconds = await getSetting('lab.interview.roundSeconds')
 
-    const token = await ai.authTokens.create({
-      config: {
-        uses: 1,
-        // Must outlive the round itself, plus reconnect headroom — a token that
-        // expires mid-round kills the session. Scales with the admin setting.
-        expireTime: new Date(now + Math.max(5 * 60, roundSeconds + 120) * 1000).toISOString(),
-        newSessionExpireTime: new Date(now + 2 * 60 * 1000).toISOString(),
-        liveConnectConstraints: {
-          model: LIVE_MODEL,
-          config: {
-            responseModalities: [Modality.AUDIO],
-            speechConfig: {
-              voiceConfig: { prebuiltVoiceConfig: { voiceName } },
-              languageCode: speechCode,
-            },
-            inputAudioTranscription: {},
-            outputAudioTranscription: {},
-            sessionResumption: resumeHandle ? { handle: resumeHandle } : {},
-            systemInstruction: buildSystemInstruction(topic, level, {
-              language,
-              includeIntro,
-              personaName,
-              pressure,
-              roundSeconds,
-            }),
+    const { token } = await mintLiveToken('INTERVIEW', sessionId, {
+      uses: 1,
+      // Must outlive the round itself, plus reconnect headroom — a token that
+      // expires mid-round kills the session. Scales with the admin setting.
+      expireTime: new Date(now + Math.max(5 * 60, roundSeconds + 120) * 1000).toISOString(),
+      newSessionExpireTime: new Date(now + 2 * 60 * 1000).toISOString(),
+      liveConnectConstraints: {
+        model: LIVE_MODEL,
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName } },
+            languageCode: speechCode,
           },
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
+          // Lets the interviewer wrap up when the candidate is done (see prompt).
+          tools: [END_SESSION_TOOL],
+          sessionResumption: resumeHandle ? { handle: resumeHandle } : {},
+          systemInstruction: buildSystemInstruction(topic, level, {
+            language,
+            includeIntro,
+            personaName,
+            pressure,
+            roundSeconds,
+          }),
         },
-        httpOptions: { apiVersion: 'v1alpha' },
       },
+      httpOptions: { apiVersion: 'v1alpha' },
     })
 
-    return Response.json({ token: token.name, sessionId, roundSeconds })
+    return Response.json({ token, sessionId, roundSeconds })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     return errorResponse('CONNECT_FAILED', `Failed to mint interview token: ${message}`)

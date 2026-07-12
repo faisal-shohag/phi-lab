@@ -1,4 +1,4 @@
-import { GoogleGenAI, Modality } from '@google/genai'
+import { Modality } from '@google/genai'
 import { characterById, CHARACTERS, languageById, type LanguageId } from '@/lib/interview/topics'
 import { buildTeachbackInstruction } from '@/lib/feynman/concepts'
 import { requireUser } from '@/lib/auth-server'
@@ -6,15 +6,19 @@ import { errorResponse } from '@/lib/interview/errors'
 import { prisma } from '@/lib/prisma'
 import { getSetting } from '@/lib/admin/settings'
 import { isSuspended } from '@/lib/admin/suspension'
+import { LIVE_MODEL, mintLiveToken } from '@/lib/ai-keys/live-token'
+import { keysFor } from '@/lib/ai-keys/pool'
+import { END_SESSION_TOOL } from '@/lib/labs/end-session'
 
 // Mints a single-use ephemeral Gemini Live token for a teach-back session. The
 // full Live config (voice, language, and the "curious beginner" persona) is
-// locked into the token, exactly like the interview lab.
+// locked into the token, exactly like the interview lab. The key comes from the
+// rotating pool (src/lib/ai-keys/pool.ts).
 //
 // Also the enforcement choke point for the admin kill switch, the daily cap,
 // and account suspension: no token, no round.
 
-export const LIVE_MODEL = 'gemini-3.1-flash-live-preview'
+export { LIVE_MODEL }
 
 function startOfTodayUTC(): Date {
   const d = new Date()
@@ -22,8 +26,9 @@ function startOfTodayUTC(): Date {
 }
 
 export async function POST(request: Request) {
-  const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) return errorResponse('SERVER_ERROR', 'GEMINI_API_KEY is not configured on the server.')
+  if (keysFor('gemini').length === 0) {
+    return errorResponse('SERVER_ERROR', 'No Gemini API key is configured on the server.')
+  }
 
   const user = await requireUser()
   if (!user) return errorResponse('AUTH_REQUIRED')
@@ -79,38 +84,37 @@ export async function POST(request: Request) {
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey })
     const now = Date.now()
     const speechCode = languageById(language)?.speechCode ?? 'en-US'
     // One resolve, used twice: the prompt's pacing and the client's countdown
     // must agree, or the AI wraps up at a different time than the timer.
     const roundSeconds = await getSetting('lab.feynman.roundSeconds')
 
-    const token = await ai.authTokens.create({
-      config: {
-        uses: 1,
-        // Must outlive the round, plus reconnect headroom.
-        expireTime: new Date(now + Math.max(5 * 60, roundSeconds + 120) * 1000).toISOString(),
-        newSessionExpireTime: new Date(now + 2 * 60 * 1000).toISOString(),
-        liveConnectConstraints: {
-          model: LIVE_MODEL,
-          config: {
-            responseModalities: [Modality.AUDIO],
-            speechConfig: {
-              voiceConfig: { prebuiltVoiceConfig: { voiceName } },
-              languageCode: speechCode,
-            },
-            inputAudioTranscription: {},
-            outputAudioTranscription: {},
-            sessionResumption: resumeHandle ? { handle: resumeHandle } : {},
-            systemInstruction: buildTeachbackInstruction(concept, { language, personaName, roundSeconds }),
+    const { token } = await mintLiveToken('FEYNMAN', sessionId, {
+      uses: 1,
+      // Must outlive the round, plus reconnect headroom.
+      expireTime: new Date(now + Math.max(5 * 60, roundSeconds + 120) * 1000).toISOString(),
+      newSessionExpireTime: new Date(now + 2 * 60 * 1000).toISOString(),
+      liveConnectConstraints: {
+        model: LIVE_MODEL,
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName } },
+            languageCode: speechCode,
           },
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
+          // Lets the student wrap up when the teacher is done (see prompt).
+          tools: [END_SESSION_TOOL],
+          sessionResumption: resumeHandle ? { handle: resumeHandle } : {},
+          systemInstruction: buildTeachbackInstruction(concept, { language, personaName, roundSeconds }),
         },
-        httpOptions: { apiVersion: 'v1alpha' },
       },
+      httpOptions: { apiVersion: 'v1alpha' },
     })
 
-    return Response.json({ token: token.name, sessionId, roundSeconds })
+    return Response.json({ token, sessionId, roundSeconds })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     return errorResponse('CONNECT_FAILED', `Failed to mint teach-back token: ${message}`)

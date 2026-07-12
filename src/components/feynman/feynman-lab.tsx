@@ -1,9 +1,11 @@
 'use client'
 
+import { useEffect } from 'react'
 import Link from 'next/link'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Loader2, AlertCircle, History } from 'lucide-react'
 import { useFeynman } from '@/lib/feynman/use-feynman'
+import { conceptById } from '@/lib/feynman/concepts'
 import { SetupScreen } from '@/components/feynman/setup-screen'
 import { GreenRoom } from '@/components/feynman/green-room'
 import { LiveScreen } from '@/components/feynman/live-screen'
@@ -17,6 +19,17 @@ import { resolveErrorCopy } from '@/lib/interview/errors'
 
 export function FeynmanLab({ userName }: { userName?: string }) {
   const fx = useFeynman()
+
+  // The Path deep-links here as `/labs/feynman?concept=<id>` to satisfy a
+  // "teach it back" step. Jump straight into the green room for that concept
+  // instead of making the learner re-pick what the path already chose. Guarded
+  // to a known concept id, and only on the idle setup screen.
+  useEffect(() => {
+    if (fx.phase !== 'idle') return
+    const wanted = new URLSearchParams(window.location.search).get('concept')
+    if (wanted && conceptById(wanted)) fx.enterGreenRoom(wanted)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <div className="min-h-screen bg-linear-to-br from-zinc-50 via-white to-zinc-100 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-950">

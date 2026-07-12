@@ -3,6 +3,10 @@
     {
       "path": "/api/hive/cleanup",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/labs/cleanup",
+      "schedule": "30 * * * *"
     }
   ]
 }

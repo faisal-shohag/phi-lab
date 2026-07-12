@@ -4,6 +4,7 @@
 // There is no grading; the point is to help in the moment. Framework-free so
 // both the client and the token route can import it.
 import { spokenDuration } from '@/lib/labs/duration'
+import { endingInstruction } from '@/lib/labs/end-session'
 
 export interface SupportCategory {
   id: string
@@ -161,7 +162,7 @@ export function buildSupportInstruction(
     ...(category?.extra ?? []),
     '',
     `This is a short session of about ${spokenDuration(roundSeconds)}. Use the time well, and when you are told time is almost up, warmly help them land on a next step or a kind closing thought, then stop.`,
-    'Ending the call: when the learner clearly signals they are done — their problem is solved, they got what they needed, or they say they want to stop — first check gently ("Are you all set for now?"), say a warm one-sentence goodbye, and THEN call the end_session tool to hang up. Do not call end_session while the learner still needs help or without saying goodbye first.',
+    endingInstruction(roundSeconds),
     'Begin only when prompted: greet the learner by acknowledging what they came for, and gently open the conversation.',
   ]
 

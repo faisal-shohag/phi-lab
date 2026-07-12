@@ -7,6 +7,7 @@ import {
   Sparkles,
   Users,
   Hexagon,
+  FlaskConical,
   SlidersHorizontal,
   ScrollText,
   type LucideIcon,
@@ -31,6 +32,12 @@ export const ADMIN_NAV: NavItem[] = [
     href: '/admin/ai-usage',
     icon: Sparkles,
     description: 'Tokens, latency and failures per feature',
+  },
+  {
+    title: 'Labs',
+    href: '/admin/labs',
+    icon: FlaskConical,
+    description: 'Session usage and what is running now',
   },
   {
     title: 'Users',

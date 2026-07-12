@@ -2,6 +2,7 @@
 // interview lab. Kept framework-free so both the client page and the server
 // report route can import it.
 import { spokenDuration } from '@/lib/labs/duration'
+import { endingInstruction } from '@/lib/labs/end-session'
 
 export type LevelId = 'easy' | 'medium' | 'expert'
 
@@ -237,6 +238,7 @@ export function buildSystemInstruction(
   lines.push(
     '',
     `The entire round lasts about ${spokenDuration(roundSeconds)}. When you are told that time is up, thank the candidate warmly in one sentence and stop asking questions.`,
+    endingInstruction(roundSeconds),
     'Begin only when the candidate speaks or when prompted to start.',
   )
 

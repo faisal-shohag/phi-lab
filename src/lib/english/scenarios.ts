@@ -3,6 +3,7 @@
 // (interviewer, manager, teammate) and keeps the conversation going. Voice
 // personas are reused from the interview lab. Framework-free.
 import { spokenDuration } from '@/lib/labs/duration'
+import { endingInstruction } from '@/lib/labs/end-session'
 
 export interface Scenario {
   id: string
@@ -122,6 +123,7 @@ export function buildCoachInstruction(
     ...(scenario?.extra ?? []),
     '',
     `The session lasts about ${spokenDuration(roundSeconds)}. When you are told time is up, thank them warmly in one sentence and stop.`,
+    endingInstruction(roundSeconds),
     'Begin only when prompted: greet the learner in one sentence in your role and ask your first question.',
   ]
 

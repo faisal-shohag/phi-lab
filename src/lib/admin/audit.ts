@@ -12,11 +12,13 @@ export type AuditAction =
   | 'user.suspend'
   | 'user.unsuspend'
   | 'setting.update'
+  /** An admin force-ended someone else's live lab session from the monitor. */
+  | 'lab.session.force_end'
 
 export interface AuditEntry {
   actorId: string
   action: AuditAction
-  targetType?: 'user' | 'setting'
+  targetType?: 'user' | 'setting' | 'session'
   targetId?: string
   before?: Prisma.InputJsonValue
   after?: Prisma.InputJsonValue
