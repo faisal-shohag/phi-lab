@@ -1,11 +1,19 @@
 // Resume the learner's current active challenge (e.g. after a refresh). Returns
-// only client-safe fields — never the hidden tests or expected outputs. A timed
-// round whose clock has already lapsed is closed as a loss here so a stale tab
-// can't keep playing.
+// only client-safe fields — never the hidden tests or expected outputs.
+//
+// A Blitz round whose clock has lapsed comes back with `rescuable: 'time'`
+// rather than being closed as a loss: refreshing during the "Time's up —
+// Resume?" prompt used to forfeit the stake, which made a page reload cost real
+// XP. It stays open only until the grace window runs out (see closeIfAbandoned).
+//
+// A stale tab still can't play on: `submit` refuses to grade a lapsed clock and
+// short-circuits to the same rescue offer. Nothing here is trusted for timing.
 
 import { requireUser } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { errorResponse } from '@/lib/interview/errors'
+import { closeIfAbandoned } from '@/lib/visualizer/challenge-state'
+import { rescuableFor } from '@/lib/visualizer/challenge'
 
 export const runtime = 'nodejs'
 
@@ -19,8 +27,7 @@ export async function GET() {
   })
   if (!attempt) return Response.json({ active: null })
 
-  if (attempt.expiresAt && Date.now() > attempt.expiresAt.getTime()) {
-    await prisma.challengeAttempt.update({ where: { id: attempt.id }, data: { status: 'lost' } })
+  if (await closeIfAbandoned(attempt)) {
     return Response.json({ active: null, expired: attempt.id })
   }
 
@@ -35,6 +42,9 @@ export async function GET() {
   for (const r of recent) { if (r.status === 'won') currentStreak++; else break }
 
   return Response.json({
+    // Set when the round can't be played until the learner pays: the page opens
+    // the rescue overlay instead of the arena.
+    rescuable: rescuableFor(attempt),
     active: {
       attemptId: attempt.id,
       difficulty: attempt.difficulty,
