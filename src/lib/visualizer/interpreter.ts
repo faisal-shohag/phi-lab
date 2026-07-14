@@ -1589,6 +1589,16 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
             if (node.init.type === 'VariableDeclaration') execStmt(node.init, loopScope)
             else evalExpr(node.init, loopScope)
           }
+          // `for (let i…)` gives every pass its OWN `i`, so a function made
+          // inside the body captures the value at that pass rather than sharing
+          // one binding that ends up at the final value. `var` (and a bare init
+          // expression) keep the single shared binding — that difference is the
+          // whole point of the classic setTimeout-in-a-loop bug.
+          const perIter: string[] =
+            node.init?.type === 'VariableDeclaration' && node.init.kind !== 'var'
+              ? [...loopScope.vars.keys()]
+              : []
+
           currentLine = node.loc?.start.line ?? currentLine
           pushStep({ kind: 'loop-start', line: currentLine, description: 'for loop begins', iteration: 0 })
           while (true) {
@@ -1605,11 +1615,18 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
               })
               if (!c) break
             }
+            // Fresh copies in, values back out: the body still sees and can
+            // change the counter, but anything that closed over this pass keeps
+            // pointing at this pass's copy.
+            const iterScope = perIter.length > 0 ? newScope(loopScope, 'for') : loopScope
+            for (const n of perIter) iterScope.vars.set(n, loopScope.vars.get(n)!)
             try {
-              execStmt(node.body, loopScope)
+              withScope(iterScope, () => execStmt(node.body, iterScope))
             } catch (e) {
               if (e instanceof BreakSignal) break
               if (!(e instanceof ContinueSignal)) throw e
+            } finally {
+              for (const n of perIter) loopScope.vars.set(n, iterScope.vars.get(n)!)
             }
             if (node.update) {
               currentLine = node.update.loc?.start.line ?? currentLine

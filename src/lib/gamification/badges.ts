@@ -28,6 +28,8 @@ export interface BadgeStats {
   conceptsCompleted: string[]
   /** JS Motion curriculum: catalog problems finished (demo + practice). */
   problemsCompleted: number
+  /** JS Motion Bug Hunt: levels repaired. */
+  bugsFixed: number
   /** Challenge Mode: total staked-challenge wins, and a Hard one-shot win. */
   challengeWins: number
   wonHardOneshot: boolean
@@ -261,6 +263,23 @@ export const BADGES: BadgeDef[] = [
     icon: 'ArrowDownWideNarrow',
     tint: 'from-cyan-400 to-teal-600',
     earned: (s) => s.conceptsCompleted.includes('sorting'),
+  },
+  // ── Bug Hunt ────────────────────────────────────────────────────────────
+  {
+    id: 'bug-squasher',
+    label: 'Bug Squasher',
+    description: 'Fix your first Bug Hunt level.',
+    icon: 'Bug',
+    tint: 'from-lime-400 to-emerald-600',
+    earned: (s) => s.bugsFixed >= 1,
+  },
+  {
+    id: 'exterminator',
+    label: 'Exterminator',
+    description: 'Fix 10 Bug Hunt levels.',
+    icon: 'BugOff',
+    tint: 'from-emerald-500 to-green-700',
+    earned: (s) => s.bugsFixed >= 10,
   },
   // ── Challenge Mode ──────────────────────────────────────────────────────
   {
