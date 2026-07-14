@@ -764,7 +764,11 @@ export default function Home() {
   const outputsSoFar = useMemo(() => {
     if (!trace) return [] as string[]
     const out: string[] = []
-    for (let i = 0; i <= currentIndex; i++) {
+    // Clamp: a render can briefly pair a fresh, shorter trace with the previous
+    // program's step index, and walking past the end took the whole page down
+    // with "Cannot read properties of undefined".
+    const upto = Math.min(currentIndex, trace.steps.length - 1)
+    for (let i = 0; i <= upto; i++) {
       const s = trace.steps[i]
       if (s.kind === 'output' && s.output != null) out.push(s.output)
     }
