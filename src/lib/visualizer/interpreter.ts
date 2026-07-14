@@ -1721,34 +1721,45 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
           currentLine = node.loc?.start.line ?? currentLine
           pushStep({ kind: 'loop-start', line: currentLine, description: `for...of begins over ${arr.length} items`, iteration: 0 })
           const leftTarget = node.left.type === 'VariableDeclaration' ? node.left.declarations[0].id : node.left
+          // `for (let x of …)` / `const` bind x afresh each pass, so a function
+          // made in the body captures that pass's item. `var` and a bare
+          // assignment target share one binding.
+          const perIter = node.left.type === 'VariableDeclaration' && node.left.kind !== 'var'
           let i = 0
           for (const item of arr) {
+            const iterScope = perIter ? newScope(loopScope, 'for-of') : loopScope
             // The loop variable can be a plain name or a pattern (for (const [k,v] of map)).
             let name: string
             if (leftTarget.type === 'Identifier') {
               name = leftTarget.name
-              loopScope.vars.set(name, item)
+              iterScope.vars.set(name, item)
             } else {
-              const binds = destructure(leftTarget, item, loopScope)
-              for (const b of binds) loopScope.vars.set(b.name, b.value)
+              const binds = destructure(leftTarget, item, iterScope)
+              for (const b of binds) iterScope.vars.set(b.name, b.value)
               name = binds.map((b) => `${b.name}=${formatValue(b.value)}`).join(', ')
             }
             currentLine = node.left.loc?.start.line ?? currentLine
-            pushStep({
-              kind: 'loop-iter',
-              line: currentLine,
-              description: leftTarget.type === 'Identifier'
-                ? `${name} = ${formatValue(item)}  (item ${i + 1}/${arr.length})`
-                : `${name}  (item ${i + 1}/${arr.length})`,
-              iteration: i,
-              focus: { varName: leftTarget.type === 'Identifier' ? name : undefined },
+            // Stepped inside the iteration scope so the snapshot sees this
+            // pass's binding rather than an empty loop scope.
+            let broke = false
+            withScope(iterScope, () => {
+              pushStep({
+                kind: 'loop-iter',
+                line: currentLine,
+                description: leftTarget.type === 'Identifier'
+                  ? `${name} = ${formatValue(item)}  (item ${i + 1}/${arr.length})`
+                  : `${name}  (item ${i + 1}/${arr.length})`,
+                iteration: i,
+                focus: { varName: leftTarget.type === 'Identifier' ? name : undefined },
+              })
+              try {
+                execStmt(node.body, iterScope)
+              } catch (e) {
+                if (e instanceof BreakSignal) { broke = true; return }
+                if (!(e instanceof ContinueSignal)) throw e
+              }
             })
-            try {
-              execStmt(node.body, loopScope)
-            } catch (e) {
-              if (e instanceof BreakSignal) break
-              if (!(e instanceof ContinueSignal)) throw e
-            }
+            if (broke) break
             i++
           }
           pushStep({ kind: 'loop-end', line: currentLine, description: `for...of ended after ${i} iteration(s)` })
@@ -1762,24 +1773,31 @@ export function interpret(source: string, opts: InterpreterOptions = {}): Trace 
           const keys = obj && typeof obj === 'object' ? Object.keys(obj as object) : []
           currentLine = node.loc?.start.line ?? currentLine
           pushStep({ kind: 'loop-start', line: currentLine, description: `for...in begins over ${keys.length} key(s)`, iteration: 0 })
+          // Same per-iteration binding rule as for…of — see the note there.
+          const perIter = node.left.type === 'VariableDeclaration' && node.left.kind !== 'var'
           let i = 0
           for (const key of keys) {
+            const iterScope = perIter ? newScope(loopScope, 'for-in') : loopScope
             const name = node.left.type === 'VariableDeclaration' ? node.left.declarations[0].id.name : node.left.name
-            loopScope.vars.set(name, key)
+            iterScope.vars.set(name, key)
             currentLine = node.left.loc?.start.line ?? currentLine
-            pushStep({
-              kind: 'loop-iter',
-              line: currentLine,
-              description: `${name} = "${key}"  (key ${i + 1}/${keys.length})`,
-              iteration: i,
-              focus: { varName: name },
+            let broke = false
+            withScope(iterScope, () => {
+              pushStep({
+                kind: 'loop-iter',
+                line: currentLine,
+                description: `${name} = "${key}"  (key ${i + 1}/${keys.length})`,
+                iteration: i,
+                focus: { varName: name },
+              })
+              try {
+                execStmt(node.body, iterScope)
+              } catch (e) {
+                if (e instanceof BreakSignal) { broke = true; return }
+                if (!(e instanceof ContinueSignal)) throw e
+              }
             })
-            try {
-              execStmt(node.body, loopScope)
-            } catch (e) {
-              if (e instanceof BreakSignal) break
-              if (!(e instanceof ContinueSignal)) throw e
-            }
+            if (broke) break
             i++
           }
           pushStep({ kind: 'loop-end', line: currentLine, description: `for...in ended after ${i} iteration(s)` })

@@ -64,6 +64,20 @@ function stmtFromCode(code: string): Node {
   return (parse(code, { ecmaVersion: 2023, allowReturnOutsideFunction: true }) as Node).body[0]
 }
 
+// As above, but for snippets that re-parse the user's own statements — those may
+// contain `break` / `continue`, which acorn rejects at the top level of a
+// snippet ("Unsyntactic break") even though the jump is perfectly legal where
+// the result gets spliced back in. Parsing inside a throwaway loop gives those
+// jumps something to bind to; binding is re-decided from the generated output's
+// real surroundings, so the dummy leaves no trace.
+//
+// Without this, `if (x) break;` inside ANY loop failed to instrument at all —
+// and `break` is week-one material.
+function stmtFromCodeAllowingJumps(code: string): Node {
+  const wrapped = parse(`while(true){${code}}`, { ecmaVersion: 2023, allowReturnOutsideFunction: true }) as Node
+  return wrapped.body[0].body.body[0]
+}
+
 // A `() => ({a: a, b: b})` thunk over the given visible names.
 function thunkSrc(names: string[]): string {
   if (!names.length) return 'function(){return {}}'
@@ -551,7 +565,9 @@ function transformBlock(block: Node, ctx: Ctx, seedNames: string[]): void {
       const testSrc = generate(stmt.test)
       const conseqSrc = generate(stmt.consequent)
       const altSrc = stmt.alternate ? ' else ' + generate(stmt.alternate) : ''
-      out.push(stmtFromCode(
+      // Jumps allowed: the branches are the learner's code and may `break` or
+      // `continue` out of a loop this `if` sits inside.
+      out.push(stmtFromCodeAllowingJumps(
         `{ var __c = (__ts(), (${testSrc})); __rec(${line},"condition",${JSON.stringify(desc)},${thunkSrc(names)},` +
           `{conditionResult: !!__c,trail:__tc(),es:${es},ee:${ee},tf:__trailText(__c)}); if (__c) ${conseqSrc}${altSrc} }`,
       ))
