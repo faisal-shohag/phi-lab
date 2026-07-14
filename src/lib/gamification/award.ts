@@ -143,6 +143,7 @@ export async function getStats(userId: string): Promise<BadgeStats> {
   const vizDays = new Set<string>()
   const conceptsCompleted = new Set<string>()
   const problemsCompleted = new Set<string>()
+  const bugsFixed = new Set<string>()
   let challengeWins = 0
   let wonHardOneshot = false
 
@@ -154,6 +155,8 @@ export async function getStats(userId: string): Promise<BadgeStats> {
       if (typeof meta.concept === 'string') conceptsCompleted.add(meta.concept)
     } else if (e.reason === 'viz_problem') {
       if (typeof meta.problemId === 'string') problemsCompleted.add(meta.problemId)
+    } else if (e.reason === 'viz_bug_fixed') {
+      if (typeof meta.bugId === 'string') bugsFixed.add(meta.bugId)
     } else if (e.reason === 'viz_challenge_win') {
       challengeWins++
       if (meta.difficulty === 'hard' && meta.mode === 'oneshot') wonHardOneshot = true
@@ -214,6 +217,7 @@ export async function getStats(userId: string): Promise<BadgeStats> {
     bestVizStreak: longestDayStreak(vizDays),
     conceptsCompleted: [...conceptsCompleted],
     problemsCompleted: problemsCompleted.size,
+    bugsFixed: bugsFixed.size,
     challengeWins,
     wonHardOneshot,
   }

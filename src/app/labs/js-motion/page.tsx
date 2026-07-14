@@ -104,7 +104,10 @@ import { LeaderboardDialog } from '@/components/visualizer/leaderboard-dialog'
 import { AiChargeDialog } from '@/components/visualizer/ai-charge-dialog'
 import { isTopic, type Difficulty, type Mode, type ChallengeSource, type ChallengeTopic } from '@/lib/visualizer/challenge'
 import { ProblemList } from '@/components/visualizer/problem-list'
+import { BugList } from '@/components/visualizer/bug-list'
 import { PracticeCheck, type CheckResult } from '@/components/visualizer/practice-check'
+import { bugById, type BugLevel } from '@/lib/visualizer/bugs'
+import { bugFixXp } from '@/lib/gamification/reasons'
 import {
   PROBLEM_TOPICS,
   ALL_PROBLEMS,
@@ -114,7 +117,7 @@ import {
   type Problem,
   type TopicId,
 } from '@/lib/visualizer/problems'
-import { Swords, Trophy } from 'lucide-react'
+import { Bug, Swords, Trophy } from 'lucide-react'
 
 // Short stable hash of the current program, used to make quiz XP idempotent per
 // (program, step) so re-running the same code can't farm repeat XP.
@@ -267,7 +270,16 @@ export default function Home() {
   const [gateTopicComplete, setGateTopicComplete] = useState(false)
   const activeProblem = problemById(activeProblemId)
 
-  // Practice check state.
+  // ---- Bug Hunt ----
+  // A side track, not part of the gate: broken programs to repair. Only one of
+  // the two lists drives the editor at a time, so opening a bug clears the
+  // active problem and vice versa.
+  const [sidebarTab, setSidebarTab] = useState<'problems' | 'bugs'>('problems')
+  const [activeBugId, setActiveBugId] = useState('')
+  const [bugCompletedIds, setBugCompletedIds] = useState<Set<string>>(new Set())
+  const activeBug = activeBugId ? bugById(activeBugId) : undefined
+
+  // Practice / bug check state — shared, since only one can be open.
   const [checkResult, setCheckResult] = useState<CheckResult | null>(null)
   const [checkBusy, setCheckBusy] = useState(false)
 
@@ -281,6 +293,7 @@ export default function Home() {
       setChallengeUnlocked(!!d.challengeUnlocked)
       setRemainingForGate(d.remainingForGate ?? 0)
       setGateTopicComplete(!!d.gateTopicComplete)
+      setBugCompletedIds(new Set<string>(d.bugs?.completedIds ?? []))
     } catch { /* progress is a nicety — never block the lab on it */ }
   }, [])
 
@@ -290,6 +303,7 @@ export default function Home() {
     if (!signedIn) {
       setProgressPercent(null)
       setCompletedIds(new Set())
+      setBugCompletedIds(new Set())
       setChallengeUnlocked(false)
       return
     }
@@ -415,6 +429,19 @@ export default function Home() {
       return
     }
     const params = new URLSearchParams(window.location.search)
+
+    // ?bug=<level id> — a direct link to one Bug Hunt level.
+    const wantedBug = params.get('bug')
+    const level = wantedBug ? bugById(wantedBug) : undefined
+    if (level) {
+      setSidebarTab('bugs')
+      setActiveBugId(level.id)
+      setActiveProblemId('')
+      setActiveExampleId('')
+      setCode(level.buggyCode)
+      runQuiet(level.buggyCode)
+      return
+    }
 
     // ?problem=<catalog id> — a direct link to one exercise.
     const wantedProblem = params.get('problem')
@@ -574,6 +601,40 @@ export default function Home() {
       setCheckBusy(false)
     }
   }, [activeProblemId, code, loadProgress, celebrate])
+
+  // Check a Bug Hunt fix. Same contract as the practice check, different route
+  // and answer key.
+  const checkBug = useCallback(async () => {
+    const level = activeBugId ? bugById(activeBugId) : undefined
+    if (!level) return
+    setCheckBusy(true)
+    try {
+      const res = await fetch('/api/labs/js-motion/bugs/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bugId: level.id, code }),
+      })
+      const data = (await res.json()) as CheckResult & { error?: string; message?: string }
+      if (!res.ok && data?.error) {
+        toast.error(data.message ?? 'Could not check your fix')
+        return
+      }
+      setCheckResult(data)
+      if (data.passed) {
+        setBugCompletedIds((prev) => new Set(prev).add(level.id))
+        void refreshXp()
+        void loadProgress()
+        if (data.xpGained) {
+          toast.success(`Bug squashed — +${data.xpGained} XP`)
+          celebrate()
+        }
+      }
+    } catch {
+      toast.error('Could not check your fix')
+    } finally {
+      setCheckBusy(false)
+    }
+  }, [activeBugId, code, loadProgress, celebrate])
 
   useEffect(() => {
     return () => {
@@ -775,8 +836,18 @@ export default function Home() {
     }
   }, [currentStep, settings.focusDim, isPlaying])
 
+  const handleBugClick = useCallback((b: BugLevel) => {
+    setActiveBugId(b.id)
+    setActiveProblemId('')
+    setActiveExampleId('')
+    setCheckResult(null)
+    setCode(b.buggyCode)
+    runQuiet(b.buggyCode)
+  }, [runQuiet])
+
   const handleProblemClick = useCallback((p: Problem) => {
     const source = problemCode(p)
+    setActiveBugId('')
     setActiveProblemId(p.id)
     // Demo problems are backed by a DEMO_EXAMPLES entry — keep that id in sync so
     // the concept award and The Path's ?demo= deep link still line up. Practice
@@ -790,6 +861,7 @@ export default function Home() {
   const handleNewClick = () => {
     setActiveExampleId('')
     setActiveProblemId('')
+    setActiveBugId('')
     setCheckResult(null)
     setCode(BLANK_CODE)
     runQuiet(BLANK_CODE)
@@ -1606,24 +1678,53 @@ export default function Home() {
               />
             ) : (
             <aside className="h-full flex flex-col min-h-0 rounded-xl border-2 border-border bg-card overflow-hidden">
-              <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/50 shrink-0">
-                <Lightbulb className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-semibold">Problems</span>
+              <div className="flex items-center gap-1 p-1 border-b bg-muted/50 shrink-0">
+                <button
+                  onClick={() => setSidebarTab('problems')}
+                  className={cn(
+                    'flex-1 flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold transition-colors',
+                    sidebarTab === 'problems' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  <Lightbulb className="h-3.5 w-3.5" />
+                  Problems
+                </button>
+                <button
+                  onClick={() => setSidebarTab('bugs')}
+                  className={cn(
+                    'flex-1 flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold transition-colors',
+                    sidebarTab === 'bugs' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  <Bug className="h-3.5 w-3.5" />
+                  Bug Hunt
+                </button>
               </div>
-              <ProblemList
-                activeProblemId={activeProblemId}
-                completedIds={completedIds}
-                openTopics={openTopics}
-                onToggleTopic={toggleTopic}
-                onPick={handleProblemClick}
-                calm={settings.calmMode}
-                percent={progressPercent}
-                challengeUnlocked={challengeUnlocked}
-                remainingForGate={remainingForGate}
-                gateTopicComplete={gateTopicComplete}
-                gatePercent={CHALLENGE_GATE_PERCENT}
-                signedIn={signedIn}
-              />
+              {sidebarTab === 'problems' ? (
+                <ProblemList
+                  activeProblemId={activeProblemId}
+                  completedIds={completedIds}
+                  openTopics={openTopics}
+                  onToggleTopic={toggleTopic}
+                  onPick={handleProblemClick}
+                  calm={settings.calmMode}
+                  percent={progressPercent}
+                  challengeUnlocked={challengeUnlocked}
+                  remainingForGate={remainingForGate}
+                  gateTopicComplete={gateTopicComplete}
+                  gatePercent={CHALLENGE_GATE_PERCENT}
+                  signedIn={signedIn}
+                />
+              ) : (
+                <BugList
+                  activeBugId={activeBugId}
+                  completedIds={bugCompletedIds}
+                  onPick={handleBugClick}
+                  xpFor={bugFixXp}
+                  calm={settings.calmMode}
+                  signedIn={signedIn}
+                />
+              )}
             </aside>
             )}
           </ResizablePanel>
@@ -1703,14 +1804,16 @@ export default function Home() {
                           <ComplexityMeter loop={currentLoop} currentIndex={currentIndex} />
                         </div>
                       )}
-                      {activeProblem?.kind === 'practice' && !challengeActive && (
+                      {!challengeActive && (activeBug || activeProblem?.kind === 'practice') && (
                         <div className="shrink-0 px-2 pb-2 pt-1">
                           <PracticeCheck
-                            problem={activeProblem}
+                            title={activeBug ? activeBug.title : activeProblem!.title}
+                            goal={activeBug ? activeBug.goal : activeProblem!.goal ?? ''}
+                            kind={activeBug ? 'bug' : 'practice'}
                             result={checkResult}
                             busy={checkBusy}
                             locked={!signedIn}
-                            onCheck={checkPractice}
+                            onCheck={activeBug ? checkBug : checkPractice}
                             calm={settings.calmMode}
                           />
                         </div>

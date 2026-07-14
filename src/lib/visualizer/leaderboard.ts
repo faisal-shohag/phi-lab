@@ -1,14 +1,15 @@
 // Weekly XP leaderboard for the JS Motion visualizer. Ranks learners by the XP
 // they *earned this ISO week* from visualizer activities (challenge wins, daily
-// practice, problems solved, concept completions, correct quizzes). Reuses the
-// Hive ISO-week helpers so "this week" means the same thing platform-wide.
+// practice, problems solved, bugs fixed, concept completions, correct quizzes).
+// Reuses the Hive ISO-week helpers so "this week" means the same thing
+// platform-wide.
 
 import { prisma } from '@/lib/prisma'
 import { startOfIsoWeekUTC, isoWeekKey } from '@/lib/hive/leaderboard'
 
 // Positive XP from these reasons counts toward the weekly board. Spends
 // (negative amounts: stakes, AI charges, hints) are excluded by `amount > 0`.
-const VIZ_EARN_REASONS = ['viz_challenge_win', 'viz_daily', 'viz_problem', 'viz_concept', 'quiz_correct']
+const VIZ_EARN_REASONS = ['viz_challenge_win', 'viz_daily', 'viz_problem', 'viz_bug_fixed', 'viz_concept', 'quiz_correct']
 
 export interface VizLeaderRow {
   userId: string

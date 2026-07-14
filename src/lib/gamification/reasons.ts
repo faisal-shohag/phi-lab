@@ -65,6 +65,18 @@ export const DEMO_PROBLEM_XP = 5
 export const PRACTICE_PROBLEM_XP = 12
 
 /**
+ * Fixing a Bug Hunt level, by difficulty. Between a demo and a practice problem:
+ * the program is handed to you, but finding someone else's mistake is its own
+ * skill. Never client-triggerable — the check route awards it after running the
+ * fix (see bugs/check/route.ts).
+ */
+const BUG_FIX_XP: Record<number, number> = { 1: 6, 2: 10, 3: 15 }
+
+export function bugFixXp(difficulty: number): number {
+  return BUG_FIX_XP[difficulty] ?? BUG_FIX_XP[1]
+}
+
+/**
  * Resolve a client-triggered award to a concrete XP amount, or null if the
  * reason is not something the client is permitted to grant.
  */
