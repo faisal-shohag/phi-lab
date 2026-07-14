@@ -6,7 +6,8 @@ import { requireUser } from '@/lib/auth-server'
 import { awardXp } from '@/lib/gamification/award'
 import { prisma } from '@/lib/prisma'
 import { errorResponse } from '@/lib/interview/errors'
-import { grade, reward, streakMultiplier, MODE, type HiddenTest, type Mode } from '@/lib/visualizer/challenge'
+import { reward, streakMultiplier, MODE, type HiddenTest, type Mode } from '@/lib/visualizer/challenge'
+import { grade } from '@/lib/visualizer/grade'
 
 export const runtime = 'nodejs'
 
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
   }
 
   const tests = attempt.tests as unknown as HiddenTest[]
-  const result = grade(code, attempt.fnName, tests)
+  const result = await grade(code, attempt.fnName, tests)
   const attemptsUsed = attempt.attemptsUsed + 1
 
   // Win.

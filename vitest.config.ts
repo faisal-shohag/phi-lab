@@ -8,6 +8,11 @@ export default defineConfig({
   },
   resolve: {
     // Same `@/…` alias the app uses, so tests import modules by their real path.
-    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // `server-only`'s real entry throws outside an RSC build; stub it so
+      // server modules (e.g. the QuickJS grader) import cleanly under node.
+      'server-only': fileURLToPath(new URL('./test-stubs/server-only.ts', import.meta.url)),
+    },
   },
 })

@@ -20,7 +20,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { interpret, RuntimeError } from '@/lib/visualizer/interpreter'
+import { interpret, getParseError, RuntimeError } from '@/lib/visualizer/interpreter'
 import { playStepSound, playFinishSound, unlockAudio, playGoSting } from '@/lib/visualizer/sound'
 import { authClient } from '@/lib/auth-client'
 import { AiTutor, type TutorLang, type TutorRequest } from '@/components/visualizer/ai-tutor'
@@ -260,28 +260,74 @@ export default function Home() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Run the program on the real JS engine (QuickJS) via the trace route instead
+  // of the local teaching interpreter. Default ON (the `realEngine` setting), so
+  // Run executes every JS language feature exactly like Node. Escape hatches:
+  // `?engine=legacy` forces the classic interpreter, `?engine=qjs` forces the real
+  // engine regardless of the setting. Explicit Run only — the as-you-type preview
+  // stays on the fast local interpreter.
+  const realEngineRef = useRef(true)
+  const [realEngineBusy, setRealEngineBusy] = useState(false)
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search).get('engine')
+      if (q === 'qjs') realEngineRef.current = true
+      else if (q === 'legacy') realEngineRef.current = false
+      else realEngineRef.current = settings.realEngine
+    } catch { realEngineRef.current = settings.realEngine }
+  }, [settings.realEngine])
+
+  // Fetch a real-engine trace from the server route (QuickJS sandbox).
+  const fetchQjsTrace = useCallback(async (source: string) => {
+    const res = await fetch('/api/labs/js-motion/trace', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: source }),
+    })
+    const data = (await res.json()) as { trace: Trace | null; error: string | null }
+    return { trace: data.trace, error: data.error ?? null, errorLine: null as number | null }
+  }, [])
+
   const runQuiet = useCallback((source: string) => {
     const { trace: t, error: err, errorLine: line } = safeInterpret(source)
-    setTrace(t)
-    setError(err)
-    setErrorLine(line)
+    // With the real engine as the Run target, the legacy interpreter is only a
+    // fast live preview. Its "Unsupported X" / runtime errors are false alarms
+    // for valid full-JS code — the real engine (on Run) is the source of truth.
+    // Suppress them when the code parses cleanly; genuine syntax errors (acorn)
+    // still surface.
+    const suppress = err != null && realEngineRef.current && getParseError(source) == null
+    setTrace(suppress ? null : t)
+    setError(suppress ? null : err)
+    setErrorLine(suppress ? null : line)
     setCurrentIndex(0)
     setIsPlaying(false)
     setActiveQuestion(null)
     answeredRef.current = new Set()
   }, [])
 
-  const runAndPlay = useCallback((source: string) => {
-    const { trace: t, error: err, errorLine: line } = safeInterpret(source)
+  const applyRun = useCallback((t: Trace | null, err: string | null, line: number | null) => {
     setTrace(t)
     setError(err)
     setErrorLine(line)
     setCurrentIndex(0)
     setActiveQuestion(null)
     answeredRef.current = new Set()
-    syncCodeToLocation(source)
     setIsPlaying(!!t && t.steps.length > 1)
   }, [])
+
+  const runAndPlay = useCallback((source: string) => {
+    syncCodeToLocation(source)
+    if (realEngineRef.current) {
+      setRealEngineBusy(true)
+      fetchQjsTrace(source)
+        .then(({ trace: t, error: err, errorLine: line }) => applyRun(t, err, line))
+        .catch((e) => applyRun(null, e instanceof Error ? e.message : String(e), null))
+        .finally(() => setRealEngineBusy(false))
+      return
+    }
+    const { trace: t, error: err, errorLine: line } = safeInterpret(source)
+    applyRun(t, err, line)
+  }, [applyRun, fetchQjsTrace])
 
   const handleCodeChange = useCallback((value: string) => {
     setCode(value)
@@ -1320,9 +1366,9 @@ export default function Home() {
                 Challenge
               </Button>
             )}
-            <Button variant="default" className='bg-linear-to-r from-pink-500 to-red-500' size="sm" onClick={handleRunClick}>
+            <Button variant="default" className='bg-linear-to-r from-pink-500 to-red-500' size="sm" onClick={handleRunClick} disabled={realEngineBusy}>
               <Play className="h-4 w-4 mr-1" />
-              Run
+              {realEngineBusy ? 'Running…' : 'Run'}
             </Button>
             <UserMenu />
           </div>

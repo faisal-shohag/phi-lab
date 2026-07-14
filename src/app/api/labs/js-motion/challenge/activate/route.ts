@@ -12,9 +12,10 @@ import { spendXp } from '@/lib/gamification/award'
 import { prisma } from '@/lib/prisma'
 import { errorResponse } from '@/lib/interview/errors'
 import {
-  DIFFICULTY, MODE, isDifficulty, isMode, isTopic, topicLabel, computeExpected, runFn,
+  DIFFICULTY, MODE, isDifficulty, isMode, isTopic, topicLabel,
   type Difficulty, type Mode, type ChallengeSource, type ChallengeTopic,
 } from '@/lib/visualizer/challenge'
+import { computeExpected, runFn } from '@/lib/visualizer/grade'
 import { isLabLang, type LabLang } from '@/lib/visualizer/lang'
 
 export const runtime = 'nodejs'
@@ -132,8 +133,8 @@ export async function POST(request: Request) {
       const testArgs = g.testArgsJson.map(parseArgs).filter((a): a is unknown[] => a !== null)
       sampleArgs = parseArgs(g.sampleArgsJson) ?? testArgs[0] ?? null
       if (!testArgs.length || !sampleArgs) continue
-      const computed = computeExpected(g.referenceSolution, g.fnName, testArgs)
-      const sOut = runFn(g.referenceSolution, g.fnName, sampleArgs)
+      const computed = await computeExpected(g.referenceSolution, g.fnName, testArgs)
+      const sOut = await runFn(g.referenceSolution, g.fnName, sampleArgs)
       if (!computed || sOut === null) continue
       gen = g
       tests = computed

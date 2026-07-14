@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 export type FeatureKey =
+  | 'realEngine'
   | 'diffFlash'
   | 'consoleLane'
   | 'loopUnroll'
@@ -27,6 +28,7 @@ export type FeatureKey =
 export type VisualizerSettings = Record<FeatureKey, boolean>
 
 export const DEFAULT_SETTINGS: VisualizerSettings = {
+  realEngine: true,
   diffFlash: false,
   consoleLane: false,
   loopUnroll: false,
@@ -56,6 +58,12 @@ export interface FeatureMeta {
 }
 
 export const FEATURE_META: FeatureMeta[] = [
+  {
+    key: 'realEngine',
+    label: 'Real JS engine',
+    blurb: 'Run your code on the real JavaScript engine — every language feature (regex, classes, generators, Symbol, Date, real throw/catch), exactly like Node. Turn off to fall back to the classic teaching interpreter.',
+    group: 'Understanding',
+  },
   {
     key: 'aiTutor',
     label: 'AI tutor',
