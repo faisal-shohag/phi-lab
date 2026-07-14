@@ -17,6 +17,55 @@ export const RESUME_TIME_COST = 20
 export const RESUME_LIFE_COST = 100
 export const RESUME_TIME_MS = 5 * 60_000
 
+/**
+ * How long a Blitz round may sit unresolved past its deadline before it is
+ * written off as abandoned.
+ *
+ * A rescue offer has to survive a refresh — losing a staked round to a page
+ * reload is the bug this exists to prevent. But an offer nobody ever answers
+ * can't linger either: only one challenge may be active at a time, so a walked-
+ * away round would wedge Challenge mode indefinitely. Half an hour is long
+ * enough for a reload, a tab restore or a coffee, and short enough that nobody
+ * comes back to find themselves locked out by a round they forgot about.
+ */
+export const RESCUE_GRACE_MS = 30 * 60_000
+
+/** The state of a round that can't be played as-is until the learner pays. */
+export type Rescuable = 'time' | 'life' | null
+
+/** The fields the rescue rules look at. Both routes and the tests pass these. */
+export interface RescueState {
+  mode: string
+  status: string
+  attemptsUsed: number
+  maxAttempts: number
+  expiresAt: Date | null
+}
+
+/**
+ * What, if anything, this round is stuck on. Blitz only — the other modes have
+ * neither a clock nor a life to buy.
+ *
+ * 'time' — the clock has run out.
+ * 'life' — tries are gone but the clock is still running.
+ */
+export function rescuableFor(a: RescueState, now = Date.now()): Rescuable {
+  if (a.status !== 'active' || a.mode !== 'timed' || !a.expiresAt) return null
+  if (now > a.expiresAt.getTime()) return 'time'
+  if (a.attemptsUsed >= a.maxAttempts) return 'life'
+  return null
+}
+
+/**
+ * True once a rescue offer has gone unanswered long enough to write the round
+ * off. Only a lapsed CLOCK can strand a round this way: an out-of-tries round
+ * still has a running clock, and expiry will strand it soon enough on its own.
+ */
+export function isAbandoned(a: RescueState, now = Date.now()): boolean {
+  if (a.status !== 'active' || !a.expiresAt) return false
+  return now > a.expiresAt.getTime() + RESCUE_GRACE_MS
+}
+
 export const DIFFICULTY: Record<Difficulty, { stake: number; label: string }> = {
   easy: { stake: 20, label: 'Easy' },
   medium: { stake: 50, label: 'Medium' },

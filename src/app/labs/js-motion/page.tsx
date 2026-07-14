@@ -963,7 +963,9 @@ export default function Home() {
     }
   }, [])
 
-  // Resume an in-progress challenge after a refresh.
+  // Resume an in-progress challenge after a refresh. A Blitz round that came
+  // back rescuable was mid-offer when the page went away — re-open the offer
+  // rather than the arena, so a reload doesn't quietly cost the stake.
   useEffect(() => {
     if (!signedIn) return
     let alive = true
@@ -974,6 +976,7 @@ export default function Home() {
           setChallenge(d.active as ActiveChallenge)
           setChallengePhase('arena')
           setHintUsed((d.active.hintsUsed ?? 0) > 0)
+          if (d.rescuable === 'time' || d.rescuable === 'life') setRescue({ kind: d.rescuable })
         }
       })
       .catch(() => {})

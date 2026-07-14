@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { runFn, grade, computeExpected, reward, streakMultiplier, type HiddenTest } from '../challenge'
+import {
+  runFn, grade, computeExpected, reward, streakMultiplier,
+  rescuableFor, isAbandoned, RESCUE_GRACE_MS,
+  type HiddenTest, type RescueState,
+} from '../challenge'
 
 const SUM = 'function solve(n){ let t=0; for(let i=1;i<=n;i++) t+=i; return t }'
 
@@ -78,5 +82,71 @@ describe('streakMultiplier', () => {
   it('applies on top of the base reward', () => {
     // Hard one-shot base = 200; a 5-win streak doubles it.
     expect(Math.round(reward('oneshot', 100, 1, 0) * streakMultiplier(5))).toBe(400)
+  })
+})
+
+// The rescue rules decide whether a refresh costs someone their stake, so they
+// are worth pinning down precisely.
+const NOW = 1_700_000_000_000
+
+function blitz(over: Partial<RescueState> = {}): RescueState {
+  return {
+    mode: 'timed',
+    status: 'active',
+    attemptsUsed: 0,
+    maxAttempts: 3,
+    expiresAt: new Date(NOW + 60_000), // a minute left
+    ...over,
+  }
+}
+
+describe('rescuableFor', () => {
+  it('leaves a healthy Blitz round alone', () => {
+    expect(rescuableFor(blitz(), NOW)).toBeNull()
+  })
+
+  it('offers time once the clock has run out', () => {
+    expect(rescuableFor(blitz({ expiresAt: new Date(NOW - 1) }), NOW)).toBe('time')
+  })
+
+  it('offers a life when tries are gone but the clock is not', () => {
+    expect(rescuableFor(blitz({ attemptsUsed: 3 }), NOW)).toBe('life')
+  })
+
+  it('prefers time over a life when both have run out', () => {
+    // Buying a life on a dead clock would be XP for nothing — the resume route
+    // rejects it (EXPIRED), so the offer must be the clock.
+    const dead = blitz({ attemptsUsed: 3, expiresAt: new Date(NOW - 1) })
+    expect(rescuableFor(dead, NOW)).toBe('time')
+  })
+
+  it('never fires outside an active Blitz round', () => {
+    expect(rescuableFor(blitz({ mode: 'oneshot', expiresAt: null }), NOW)).toBeNull()
+    expect(rescuableFor(blitz({ mode: 'retries', expiresAt: null }), NOW)).toBeNull()
+    expect(rescuableFor(blitz({ status: 'lost', expiresAt: new Date(NOW - 1) }), NOW)).toBeNull()
+    expect(rescuableFor(blitz({ status: 'won', attemptsUsed: 3 }), NOW)).toBeNull()
+  })
+})
+
+describe('isAbandoned', () => {
+  it('keeps a fresh rescue offer open — a refresh must not forfeit the round', () => {
+    const justExpired = blitz({ expiresAt: new Date(NOW - 1000) })
+    expect(isAbandoned(justExpired, NOW)).toBe(false)
+  })
+
+  it('holds the offer for the whole grace window, then writes it off', () => {
+    const expiry = new Date(NOW - RESCUE_GRACE_MS)
+    expect(isAbandoned({ ...blitz(), expiresAt: expiry }, NOW)).toBe(false)
+    expect(isAbandoned({ ...blitz(), expiresAt: expiry }, NOW + 1)).toBe(true)
+  })
+
+  it('never writes off a round with no clock, however old', () => {
+    // Retries rounds have no deadline; they end when the learner ends them.
+    expect(isAbandoned(blitz({ mode: 'retries', expiresAt: null }), NOW + RESCUE_GRACE_MS * 100)).toBe(false)
+  })
+
+  it('ignores rounds that are already finished', () => {
+    const old = blitz({ status: 'lost', expiresAt: new Date(NOW - RESCUE_GRACE_MS * 2) })
+    expect(isAbandoned(old, NOW)).toBe(false)
   })
 })

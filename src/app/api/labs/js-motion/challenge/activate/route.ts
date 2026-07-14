@@ -16,6 +16,7 @@ import {
   type Difficulty, type Mode, type ChallengeSource, type ChallengeTopic,
 } from '@/lib/visualizer/challenge'
 import { computeExpected, runFn } from '@/lib/visualizer/grade'
+import { closeIfAbandoned } from '@/lib/visualizer/challenge-state'
 import { getProblemProgress } from '@/lib/visualizer/problems-progress'
 import { CHALLENGE_GATE_PERCENT } from '@/lib/visualizer/problems'
 import { isLabLang, type LabLang } from '@/lib/visualizer/lang'
@@ -95,8 +96,12 @@ export async function POST(request: Request) {
   }
 
   // One active challenge at a time — the client should resume via /active.
+  // A Blitz round left sitting past its rescue window is written off first,
+  // otherwise a single walked-away round would block Challenge mode forever.
   const existing = await prisma.challengeAttempt.findFirst({ where: { userId: user.id, status: 'active' } })
-  if (existing) return fail('ACTIVE_EXISTS', 'You already have an active challenge.', 409)
+  if (existing && !(await closeIfAbandoned(existing))) {
+    return fail('ACTIVE_EXISTS', 'You already have an active challenge.', 409)
+  }
 
   // The curriculum gate. The setup card greys the button out too, but this is
   // the boundary that matters — a POST here is all it takes to bypass the UI.
