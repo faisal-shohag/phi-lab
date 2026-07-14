@@ -101,6 +101,7 @@ import { ChallengeResult } from '@/components/visualizer/challenge-result'
 import { ChallengeRescue } from '@/components/visualizer/challenge-rescue'
 import { ArenaEntry, StakeBurn } from '@/components/visualizer/arena-fx'
 import { LeaderboardDialog } from '@/components/visualizer/leaderboard-dialog'
+import { ProgressMap } from '@/components/visualizer/progress-map'
 import { AiChargeDialog } from '@/components/visualizer/ai-charge-dialog'
 import { isTopic, type Difficulty, type Mode, type ChallengeSource, type ChallengeTopic } from '@/lib/visualizer/challenge'
 import { ProblemList } from '@/components/visualizer/problem-list'
@@ -117,7 +118,7 @@ import {
   type Problem,
   type TopicId,
 } from '@/lib/visualizer/problems'
-import { Bug, Swords, Trophy } from 'lucide-react'
+import { Bug, Map as MapIcon, Swords, Trophy } from 'lucide-react'
 
 // Short stable hash of the current program, used to make quiz XP idempotent per
 // (program, step) so re-running the same code can't farm repeat XP.
@@ -925,6 +926,21 @@ export default function Home() {
 
   // Leaderboard dialog.
   const [leaderboardOpen, setLeaderboardOpen] = useState(false)
+  const [mapOpen, setMapOpen] = useState(false)
+
+  // Jumping from the map: the target may live behind the other sidebar tab, so
+  // switch to it — otherwise the editor and the sidebar disagree about what the
+  // learner is looking at.
+  const jumpToProblem = useCallback((p: Problem) => {
+    setSidebarTab('problems')
+    setOpenTopics((prev) => new Set(prev).add(p.topicId))
+    handleProblemClick(p)
+  }, [handleProblemClick])
+
+  const jumpToBug = useCallback((b: BugLevel) => {
+    setSidebarTab('bugs')
+    handleBugClick(b)
+  }, [handleBugClick])
 
   // AI-charge confirm. Remembered "don't show again" in localStorage.
   const [aiChargeAck, setAiChargeAck] = useState(false)
@@ -1502,6 +1518,19 @@ export default function Home() {
         />
       )}
       <LeaderboardDialog open={leaderboardOpen} onOpenChange={setLeaderboardOpen} />
+      <ProgressMap
+        open={mapOpen}
+        onOpenChange={setMapOpen}
+        completedIds={completedIds}
+        bugCompletedIds={bugCompletedIds}
+        percent={progressPercent}
+        challengeUnlocked={challengeUnlocked}
+        gatePercent={CHALLENGE_GATE_PERCENT}
+        signedIn={signedIn}
+        onPickProblem={jumpToProblem}
+        onPickBug={jumpToBug}
+        onOpenChallenge={openChallenge}
+      />
       <AiChargeDialog
         open={aiChargeOpen}
         balance={userXp}
@@ -1574,6 +1603,15 @@ export default function Home() {
               <FilePlus2 className="h-4 w-4 mr-1" />
               New
             </Button>
+            {/* Guests get this too — the map is where the curriculum makes sense
+                as a whole, so it's the most honest place to show what signing in
+                is actually for. */}
+            {!challengeActive && (
+              <Button variant="outline" size="sm" onClick={() => setMapOpen(true)} title="Your progress map" className="hidden sm:flex">
+                <MapIcon className="h-4 w-4 sm:mr-1 text-pink-500" />
+                <span className="hidden md:inline">Map</span>
+              </Button>
+            )}
             {signedIn && !challengeActive && (
               <Button variant="outline" size="sm" onClick={() => setLeaderboardOpen(true)} title="Weekly leaderboard" className="hidden sm:flex">
                 <Trophy className="h-4 w-4 sm:mr-1 text-amber-500" />
