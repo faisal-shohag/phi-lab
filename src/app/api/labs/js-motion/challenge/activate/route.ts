@@ -16,6 +16,8 @@ import {
   type Difficulty, type Mode, type ChallengeSource, type ChallengeTopic,
 } from '@/lib/visualizer/challenge'
 import { computeExpected, runFn } from '@/lib/visualizer/grade'
+import { getProblemProgress } from '@/lib/visualizer/problems-progress'
+import { CHALLENGE_GATE_PERCENT } from '@/lib/visualizer/problems'
 import { isLabLang, type LabLang } from '@/lib/visualizer/lang'
 
 export const runtime = 'nodejs'
@@ -95,6 +97,20 @@ export async function POST(request: Request) {
   // One active challenge at a time — the client should resume via /active.
   const existing = await prisma.challengeAttempt.findFirst({ where: { userId: user.id, status: 'active' } })
   if (existing) return fail('ACTIVE_EXISTS', 'You already have an active challenge.', 409)
+
+  // The curriculum gate. The setup card greys the button out too, but this is
+  // the boundary that matters — a POST here is all it takes to bypass the UI.
+  const progress = await getProblemProgress(user.id)
+  if (!progress.challengeUnlocked) {
+    const need: string[] = []
+    if (progress.remainingForGate > 0) need.push(`${progress.remainingForGate} more problem${progress.remainingForGate === 1 ? '' : 's'}`)
+    if (!progress.gateTopicComplete) need.push('the Functions topic')
+    return fail(
+      'CHALLENGE_LOCKED',
+      `Challenge mode unlocks at ${Math.round(CHALLENGE_GATE_PERCENT * 100)}% of the problems plus the Functions topic. You still need ${need.join(' and ')}.`,
+      403,
+    )
+  }
 
   const stake = DIFFICULTY[difficulty].stake
   const me = await prisma.user.findUnique({ where: { id: user.id }, select: { xp: true } })

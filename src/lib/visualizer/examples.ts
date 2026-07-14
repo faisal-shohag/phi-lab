@@ -328,4 +328,166 @@ console.log("doubled: " + doubled.join(", "));
 console.log("evens: " + evens.join(", "));
 console.log("total: " + total);`,
   },
+  {
+    id: 'star-pyramid',
+    title: 'Nested Loops — Star Pyramid',
+    description: 'Build each row with an inner loop before printing it.',
+    icon: 'grid',
+    code: `let rows = 4;
+
+for (let i = 1; i <= rows; i++) {
+  let line = "";
+  for (let j = 0; j < i; j++) {
+    line = line + "*";
+  }
+  console.log(line);
+}`,
+  },
+  {
+    id: 'count-vowels',
+    title: 'Loop — Count Vowels',
+    description: 'Walk a string character by character and count the matches.',
+    icon: 'repeat',
+    code: `let word = "programming";
+let vowels = "aeiou";
+let count = 0;
+
+for (let ch of word) {
+  if (vowels.includes(ch)) {
+    count = count + 1;
+  }
+}
+
+console.log("Vowels in " + word + ": " + count);`,
+  },
+  {
+    id: 'array-search',
+    title: 'Array — Search',
+    description: 'indexOf / includes, and the manual scan they replace.',
+    icon: 'list',
+    code: `let names = ["Ayesha", "Rahim", "Karim", "Sadia"];
+
+console.log("indexOf Karim: " + names.indexOf("Karim"));
+console.log("includes Rahim: " + names.includes("Rahim"));
+console.log("includes Nabil: " + names.includes("Nabil"));
+
+let found = -1;
+for (let i = 0; i < names.length; i++) {
+  if (names[i] === "Sadia") {
+    found = i;
+  }
+}
+console.log("Manual scan found Sadia at " + found);`,
+  },
+  {
+    id: 'function-params',
+    title: 'Function — Default & Rest',
+    description: 'A default fills in a missing argument; rest collects the extras.',
+    icon: 'function',
+    code: `function greet(name, greeting = "Hello") {
+  return greeting + ", " + name + "!";
+}
+
+function total(...nums) {
+  let sum = 0;
+  for (let n of nums) {
+    sum = sum + n;
+  }
+  return sum;
+}
+
+console.log(greet("Ayesha"));
+console.log(greet("Rahim", "Salam"));
+console.log("total: " + total(1, 2, 3, 4));`,
+  },
+  {
+    id: 'object-basics',
+    title: 'Objects — Read, Write, Loop',
+    description: 'Dot access, adding a key, and walking an object with for...in.',
+    icon: 'wand',
+    code: `let book = { title: "Deep Work", pages: 296 };
+
+console.log("Title: " + book.title);
+
+book.pages = 300;
+book.author = "Cal Newport";
+
+console.log("Pages: " + book.pages);
+console.log("Author: " + book.author);
+
+for (let key in book) {
+  console.log(key + " -> " + book[key]);
+}`,
+  },
+  {
+    id: 'linear-search',
+    title: 'Linear Search',
+    description: 'Scan until you find it — and return early when you do.',
+    icon: 'arrow-right',
+    code: `function search(arr, target) {
+  for (let i = 0; i < arr.length; i++) {
+    if (arr[i] === target) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+let data = [8, 3, 91, 17, 42];
+console.log("91 is at index " + search(data, 91));
+console.log("5 is at index " + search(data, 5));`,
+  },
+  {
+    id: 'selection-sort',
+    title: 'Selection Sort',
+    description: 'Find the smallest remaining element, swap it into place, repeat.',
+    icon: 'grid',
+    code: `let arr = [29, 10, 14, 37, 13];
+
+for (let i = 0; i < arr.length - 1; i++) {
+  let min = i;
+  for (let j = i + 1; j < arr.length; j++) {
+    if (arr[j] < arr[min]) {
+      min = j;
+    }
+  }
+  if (min !== i) {
+    let temp = arr[i];
+    arr[i] = arr[min];
+    arr[min] = temp;
+  }
+}
+
+console.log("Sorted: " + arr);`,
+  },
+  {
+    id: 'promise-chain',
+    title: 'Microtasks — Promise Order',
+    description: 'Two .then callbacks queue up and drain after the sync code.',
+    icon: 'timer',
+    code: `console.log("start");
+
+Promise.resolve().then(function first() {
+  console.log("microtask 1");
+});
+
+Promise.resolve().then(function second() {
+  console.log("microtask 2");
+});
+
+console.log("end");`,
+  },
+  {
+    id: 'timeout-order',
+    title: 'setTimeout — Zero Is Not Now',
+    description: 'A 0ms timer still waits for the sync code to finish.',
+    icon: 'timer',
+    code: `console.log("A: runs now");
+
+setTimeout(function later() {
+  console.log("C: runs last (timer)");
+}, 0);
+
+console.log("B: also runs now");`,
+  },
 ]

@@ -10,6 +10,15 @@ export interface ClientAwardRequest {
   streak?: number
   /** For viz_concept: which concept the learner just completed. */
   concept?: string
+  /** For viz_problem: which catalog problem was just finished. */
+  problemId?: string
+}
+
+import { problemById } from '@/lib/visualizer/problems'
+
+/** True for catalog problems the client is trusted to self-report (demos only). */
+function isDemoProblemId(id: string): boolean {
+  return problemById(id)?.kind === 'demo'
 }
 
 // Concepts the JS Motion visualizer can credit as "mastered" (stepping a demo to
@@ -42,7 +51,18 @@ interface Resolved {
   meta?: Record<string, unknown>
 }
 
-const QUIZ_BASE = 10
+// Earning rates are deliberately lean. XP buys real things in JS Motion — a
+// challenge stake (20/50/100), an AI explanation (30), a hint (15) — and those
+// prices only mean something if the XP behind them was work. Watching a demo is
+// worth less than solving a problem, and neither is worth much on its own.
+const QUIZ_BASE = 5
+const DAILY_XP = 3
+const CONCEPT_XP = 3
+
+/** Stepping a catalog demo to its final frame. */
+export const DEMO_PROBLEM_XP = 5
+/** Solving a practice problem — server-checked, so it pays more. */
+export const PRACTICE_PROBLEM_XP = 12
 
 /**
  * Resolve a client-triggered award to a concrete XP amount, or null if the
@@ -53,19 +73,33 @@ export function resolveClientAward(req: ClientAwardRequest): Resolved | null {
     case 'quiz_correct': {
       const streak = Number.isFinite(req.streak) ? Math.max(0, Math.min(50, Math.floor(req.streak!))) : 0
       let amount = QUIZ_BASE
-      if (streak >= 10) amount += 10
-      else if (streak >= 5) amount += 5
+      if (streak >= 10) amount += 5
+      else if (streak >= 5) amount += 2
       return { amount, meta: { streak } }
     }
     // A small daily grant for opening the visualizer and running code. sourceId
     // is the calendar day, so it's idempotent — once per day, not per run.
     case 'viz_daily':
-      return { amount: 5 }
+      return { amount: DAILY_XP }
     // Completing a concept demo (stepping it to the end). Idempotent per concept
     // via sourceId; the concept is validated against the known list.
+    //
+    // Superseded by viz_problem for XP purposes (hence the small amount), but it
+    // still fires and must keep firing: it is the evidence The Path checks for
+    // its "see it" steps (lib/path/progress.ts) and the trigger for the five
+    // concept badges. Retiring it would silently break both.
     case 'viz_concept': {
       if (!req.concept || !(VIZ_CONCEPTS as readonly string[]).includes(req.concept)) return null
-      return { amount: 15, meta: { concept: req.concept } }
+      return { amount: CONCEPT_XP, meta: { concept: req.concept } }
+    }
+    // Finishing a catalog problem. The client may only claim DEMO problems —
+    // those are self-evident (it stepped the trace to the end). Practice
+    // problems are awarded by the complete route after the server has actually
+    // run the code, because that receipt gates Challenge mode.
+    case 'viz_problem': {
+      if (!req.problemId || !isDemoProblemId(req.problemId)) return null
+      if (req.sourceId !== `problem:${req.problemId}`) return null
+      return { amount: DEMO_PROBLEM_XP, meta: { problemId: req.problemId, kind: 'demo' } }
     }
     default:
       return null

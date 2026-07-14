@@ -103,6 +103,17 @@ import { ArenaEntry, StakeBurn } from '@/components/visualizer/arena-fx'
 import { LeaderboardDialog } from '@/components/visualizer/leaderboard-dialog'
 import { AiChargeDialog } from '@/components/visualizer/ai-charge-dialog'
 import { isTopic, type Difficulty, type Mode, type ChallengeSource, type ChallengeTopic } from '@/lib/visualizer/challenge'
+import { ProblemList } from '@/components/visualizer/problem-list'
+import { PracticeCheck, type CheckResult } from '@/components/visualizer/practice-check'
+import {
+  PROBLEM_TOPICS,
+  ALL_PROBLEMS,
+  CHALLENGE_GATE_PERCENT,
+  problemById,
+  problemCode,
+  type Problem,
+  type TopicId,
+} from '@/lib/visualizer/problems'
 import { Swords, Trophy } from 'lucide-react'
 
 // Short stable hash of the current program, used to make quiz XP idempotent per
@@ -243,6 +254,58 @@ export default function Home() {
   const [speed, setSpeed] = useState(1)
   const [activeExampleId, setActiveExampleId] = useState(DEMO_EXAMPLES[0].id)
 
+  // ---- Curriculum ----
+  // Which catalog problem is open, which topics are expanded, and what the
+  // server says is finished. The completed set is server truth (it gates
+  // Challenge mode); we only add to it optimistically after a confirmed award.
+  const [activeProblemId, setActiveProblemId] = useState<string>(ALL_PROBLEMS[0].id)
+  const [openTopics, setOpenTopics] = useState<Set<TopicId>>(new Set([PROBLEM_TOPICS[0].id]))
+  const [completedIds, setCompletedIds] = useState<Set<string>>(new Set())
+  const [progressPercent, setProgressPercent] = useState<number | null>(null)
+  const [challengeUnlocked, setChallengeUnlocked] = useState(false)
+  const [remainingForGate, setRemainingForGate] = useState(0)
+  const [gateTopicComplete, setGateTopicComplete] = useState(false)
+  const activeProblem = problemById(activeProblemId)
+
+  // Practice check state.
+  const [checkResult, setCheckResult] = useState<CheckResult | null>(null)
+  const [checkBusy, setCheckBusy] = useState(false)
+
+  const loadProgress = useCallback(async () => {
+    try {
+      const res = await fetch('/api/labs/js-motion/problems/progress')
+      if (!res.ok) return
+      const d = await res.json()
+      setCompletedIds(new Set<string>(d.completedIds ?? []))
+      setProgressPercent(d.percent ?? 0)
+      setChallengeUnlocked(!!d.challengeUnlocked)
+      setRemainingForGate(d.remainingForGate ?? 0)
+      setGateTopicComplete(!!d.gateTopicComplete)
+    } catch { /* progress is a nicety — never block the lab on it */ }
+  }, [])
+
+  useEffect(() => {
+    // Signing out clears the board back to the guest view; signing in fetches it.
+    /* eslint-disable react-hooks/set-state-in-effect */
+    if (!signedIn) {
+      setProgressPercent(null)
+      setCompletedIds(new Set())
+      setChallengeUnlocked(false)
+      return
+    }
+    /* eslint-enable react-hooks/set-state-in-effect */
+    void loadProgress()
+  }, [signedIn, loadProgress])
+
+  const toggleTopic = useCallback((id: TopicId) => {
+    setOpenTopics((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
   const [view, setView] = useState<PanelView>('memory')
   const [barMode, setBarMode] = useState(false)
   const [breakpoints, setBreakpoints] = useState<Set<number>>(new Set())
@@ -347,14 +410,37 @@ export default function Home() {
     if (shared) {
       setCode(shared)
       setActiveExampleId('')
+      setActiveProblemId('')
       runQuiet(shared)
       return
     }
-    const wanted = new URLSearchParams(window.location.search).get('demo')
+    const params = new URLSearchParams(window.location.search)
+
+    // ?problem=<catalog id> — a direct link to one exercise.
+    const wantedProblem = params.get('problem')
+    const problem = wantedProblem ? problemById(wantedProblem) : undefined
+    if (problem) {
+      const source = problemCode(problem)
+      setActiveProblemId(problem.id)
+      setActiveExampleId(problem.kind === 'demo' ? (problem.demoId ?? '') : '')
+      setOpenTopics((prev) => new Set(prev).add(problem.topicId))
+      setCode(source)
+      runQuiet(source)
+      return
+    }
+
+    // ?demo=<DEMO_EXAMPLES id> — kept for The Path, which links to demos by
+    // their example id rather than the catalog id.
+    const wanted = params.get('demo')
     const example = wanted ? DEMO_EXAMPLES.find((ex) => ex.id === wanted) : undefined
     if (example) {
+      const owning = ALL_PROBLEMS.find((p) => p.demoId === example.id)
       setCode(example.code)
       setActiveExampleId(example.id)
+      if (owning) {
+        setActiveProblemId(owning.id)
+        setOpenTopics((prev) => new Set(prev).add(owning.topicId))
+      }
       runQuiet(example.code)
     }
     /* eslint-enable react-hooks/set-state-in-effect */
@@ -426,17 +512,68 @@ export default function Home() {
     else playStepSound(s.kind)
   }, [currentIndex, settings.ambientSound, trace, lastIndex])
 
-  // Concept mastery: stepping a concept demo all the way to its final step earns
-  // that concept's badge. Idempotent per concept (ref guards the session, the
-  // server guards forever via sourceId).
+  // Finishing a watch-and-learn problem: stepping it all the way to the final
+  // step completes it. Two receipts are written, on purpose:
+  //   viz_problem — this catalog's progress, and what gates Challenge mode.
+  //   viz_concept — the older per-concept receipt. It still drives The Path's
+  //                 "see it" steps and the concept badges, so it must keep
+  //                 firing even though viz_problem now carries most of the XP.
+  // Both are idempotent (a ref guards the session, sourceId guards forever).
   const conceptAwardedRef = useRef<Set<string>>(new Set())
+  const problemAwardedRef = useRef<Set<string>>(new Set())
   useEffect(() => {
     if (!signedIn || !trace || lastIndex <= 0 || currentIndex !== lastIndex) return
+
     const concept = CONCEPT_BY_EXAMPLE[activeExampleId]
-    if (!concept || conceptAwardedRef.current.has(concept)) return
-    conceptAwardedRef.current.add(concept)
-    void awardXp('viz_concept', `concept:${concept}`, { concept })
-  }, [currentIndex, lastIndex, signedIn, trace, activeExampleId])
+    if (concept && !conceptAwardedRef.current.has(concept)) {
+      conceptAwardedRef.current.add(concept)
+      void awardXp('viz_concept', `concept:${concept}`, { concept })
+    }
+
+    const problem = problemById(activeProblemId)
+    if (problem?.kind === 'demo' && !problemAwardedRef.current.has(problem.id)) {
+      problemAwardedRef.current.add(problem.id)
+      void awardXp('viz_problem', `problem:${problem.id}`, { problemId: problem.id }).then((r) => {
+        if (!r) return
+        setCompletedIds((prev) => new Set(prev).add(problem.id))
+        // The gate may have just moved — re-read it rather than guessing.
+        void loadProgress()
+      })
+    }
+  }, [currentIndex, lastIndex, signedIn, trace, activeExampleId, activeProblemId, loadProgress])
+
+  // Check a practice solution: the server runs it and compares the output.
+  const checkPractice = useCallback(async () => {
+    const problem = problemById(activeProblemId)
+    if (!problem || problem.kind !== 'practice') return
+    setCheckBusy(true)
+    try {
+      const res = await fetch('/api/labs/js-motion/problems/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ problemId: problem.id, code }),
+      })
+      const data = (await res.json()) as CheckResult & { error?: string; message?: string }
+      if (!res.ok && data?.error) {
+        toast.error(data.message ?? 'Could not check your solution')
+        return
+      }
+      setCheckResult(data)
+      if (data.passed) {
+        setCompletedIds((prev) => new Set(prev).add(problem.id))
+        void refreshXp()
+        void loadProgress()
+        if (data.xpGained) {
+          toast.success(`Solved — +${data.xpGained} XP`)
+          celebrate()
+        }
+      }
+    } catch {
+      toast.error('Could not check your solution')
+    } finally {
+      setCheckBusy(false)
+    }
+  }, [activeProblemId, code, loadProgress, celebrate])
 
   useEffect(() => {
     return () => {
@@ -638,14 +775,22 @@ export default function Home() {
     }
   }, [currentStep, settings.focusDim, isPlaying])
 
-  const handleExampleClick = (ex: typeof DEMO_EXAMPLES[number]) => {
-    setActiveExampleId(ex.id)
-    setCode(ex.code)
-    runQuiet(ex.code)
-  }
+  const handleProblemClick = useCallback((p: Problem) => {
+    const source = problemCode(p)
+    setActiveProblemId(p.id)
+    // Demo problems are backed by a DEMO_EXAMPLES entry — keep that id in sync so
+    // the concept award and The Path's ?demo= deep link still line up. Practice
+    // problems have no example behind them.
+    setActiveExampleId(p.kind === 'demo' ? (p.demoId ?? '') : '')
+    setCheckResult(null)
+    setCode(source)
+    runQuiet(source)
+  }, [runQuiet])
 
   const handleNewClick = () => {
     setActiveExampleId('')
+    setActiveProblemId('')
+    setCheckResult(null)
     setCode(BLANK_CODE)
     runQuiet(BLANK_CODE)
   }
@@ -1361,8 +1506,25 @@ export default function Home() {
               </Button>
             )}
             {challengePhase === 'off' && !sessionPending && (
-              <Button variant="outline" size="sm" onClick={openChallenge} title="Stake XP and take an AI coding challenge" className="border-rose-400/60 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10">
-                <Swords className="h-4 w-4 mr-1" />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={openChallenge}
+                title={
+                  !signedIn
+                    ? 'Sign in to take a staked challenge'
+                    : challengeUnlocked
+                      ? 'Stake XP and take an AI coding challenge'
+                      : `Unlocks at ${Math.round(CHALLENGE_GATE_PERCENT * 100)}% of the problems plus the Functions topic`
+                }
+                className={cn(
+                  'border-rose-400/60 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10',
+                  signedIn && !challengeUnlocked && 'opacity-60',
+                )}
+              >
+                {signedIn && !challengeUnlocked
+                  ? <Lock className="h-4 w-4 mr-1" />
+                  : <Swords className="h-4 w-4 mr-1" />}
                 Challenge
               </Button>
             )}
@@ -1410,6 +1572,10 @@ export default function Home() {
                 hasCode={hasRealCode}
                 calm={settings.calmMode}
                 sound={settings.ambientSound}
+                gateUnlocked={challengeUnlocked}
+                gateRemaining={remainingForGate}
+                gateTopicComplete={gateTopicComplete}
+                gatePercent={CHALLENGE_GATE_PERCENT}
                 difficulty={challengeDifficulty}
                 mode={challengeMode}
                 source={challengeSource}
@@ -1442,35 +1608,22 @@ export default function Home() {
             <aside className="h-full flex flex-col min-h-0 rounded-xl border-2 border-border bg-card overflow-hidden">
               <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/50 shrink-0">
                 <Lightbulb className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-semibold">Demo examples</span>
+                <span className="text-sm font-semibold">Problems</span>
               </div>
-              <div className="flex-1 overflow-y-auto p-2 space-y-1.5" style={{ perspective: 700 }}>
-                {DEMO_EXAMPLES.map((ex) => (
-                  <motion.button
-                    key={ex.id}
-                    onClick={() => handleExampleClick(ex)}
-                    whileHover={settings.calmMode ? undefined : { y: -2, rotateX: 3, scale: 1.01 }}
-                    whileTap={settings.calmMode ? undefined : { scale: 0.99 }}
-                    className={cn(
-                      'w-full text-left p-2.5 rounded-lg border-2 transition-colors duration-150',
-                      activeExampleId === ex.id
-                        ? 'border-foreground bg-foreground text-background shadow-md ring-1 ring-foreground/20'
-                        : 'border-border bg-card hover:border-foreground/30 hover:bg-accent',
-                    )}
-                  >
-                    <div className="font-semibold text-sm leading-tight">{ex.title}</div>
-                    <div className={cn(
-                      'text-[11px] mt-0.5 leading-snug',
-                      activeExampleId === ex.id ? 'text-background/70' : 'text-muted-foreground',
-                    )}>
-                      {ex.description}
-                    </div>
-                  </motion.button>
-                ))}
-                <div className="p-2.5 rounded-lg bg-muted/50 text-[11px] text-muted-foreground leading-relaxed mt-3">
-                  <strong className="text-foreground">Tip:</strong> Pick a demo or press <strong>New</strong>. Click the gutter to set breakpoints. Use <strong>←/→</strong> to step, <strong>Space</strong> to play. Toggle <strong>Quiz</strong> to test yourself.
-                </div>
-              </div>
+              <ProblemList
+                activeProblemId={activeProblemId}
+                completedIds={completedIds}
+                openTopics={openTopics}
+                onToggleTopic={toggleTopic}
+                onPick={handleProblemClick}
+                calm={settings.calmMode}
+                percent={progressPercent}
+                challengeUnlocked={challengeUnlocked}
+                remainingForGate={remainingForGate}
+                gateTopicComplete={gateTopicComplete}
+                gatePercent={CHALLENGE_GATE_PERCENT}
+                signedIn={signedIn}
+              />
             </aside>
             )}
           </ResizablePanel>
@@ -1548,6 +1701,18 @@ export default function Home() {
                       {settings.complexityMeter && currentLoop && (
                         <div className="shrink-0 px-2 pb-2 pt-1">
                           <ComplexityMeter loop={currentLoop} currentIndex={currentIndex} />
+                        </div>
+                      )}
+                      {activeProblem?.kind === 'practice' && !challengeActive && (
+                        <div className="shrink-0 px-2 pb-2 pt-1">
+                          <PracticeCheck
+                            problem={activeProblem}
+                            result={checkResult}
+                            busy={checkBusy}
+                            locked={!signedIn}
+                            onCheck={checkPractice}
+                            calm={settings.calmMode}
+                          />
                         </div>
                       )}
                       {/* Notices overlay the editor bottom so they never reflow the

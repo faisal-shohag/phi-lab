@@ -142,6 +142,7 @@ export async function getStats(userId: string): Promise<BadgeStats> {
   // JS Motion visualizer engagement.
   const vizDays = new Set<string>()
   const conceptsCompleted = new Set<string>()
+  const problemsCompleted = new Set<string>()
   let challengeWins = 0
   let wonHardOneshot = false
 
@@ -151,6 +152,8 @@ export async function getStats(userId: string): Promise<BadgeStats> {
       vizDays.add(e.createdAt.toISOString().slice(0, 10))
     } else if (e.reason === 'viz_concept') {
       if (typeof meta.concept === 'string') conceptsCompleted.add(meta.concept)
+    } else if (e.reason === 'viz_problem') {
+      if (typeof meta.problemId === 'string') problemsCompleted.add(meta.problemId)
     } else if (e.reason === 'viz_challenge_win') {
       challengeWins++
       if (meta.difficulty === 'hard' && meta.mode === 'oneshot') wonHardOneshot = true
@@ -210,6 +213,7 @@ export async function getStats(userId: string): Promise<BadgeStats> {
     vizDaysPracticed: vizDays.size,
     bestVizStreak: longestDayStreak(vizDays),
     conceptsCompleted: [...conceptsCompleted],
+    problemsCompleted: problemsCompleted.size,
     challengeWins,
     wonHardOneshot,
   }

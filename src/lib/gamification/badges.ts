@@ -26,6 +26,8 @@ export interface BadgeStats {
   vizDaysPracticed: number
   bestVizStreak: number
   conceptsCompleted: string[]
+  /** JS Motion curriculum: catalog problems finished (demo + practice). */
+  problemsCompleted: number
   /** Challenge Mode: total staked-challenge wins, and a Hard one-shot win. */
   challengeWins: number
   wonHardOneshot: boolean

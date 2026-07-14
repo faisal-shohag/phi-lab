@@ -82,6 +82,11 @@ interface Props {
   hasCode?: boolean
   calm?: boolean
   sound?: boolean
+  /** The curriculum gate: false until enough problems + Functions are done. */
+  gateUnlocked?: boolean
+  gateRemaining?: number
+  gateTopicComplete?: boolean
+  gatePercent?: number
   difficulty: Difficulty
   mode: Mode
   source: ChallengeSource
@@ -91,13 +96,20 @@ interface Props {
   onClose: () => void
 }
 
-export function ChallengeSetup({ xp, locked, busy, hasCode, calm, sound, difficulty, mode, source, topics, onChange, onActivate, onClose }: Props) {
+export function ChallengeSetup({
+  xp, locked, busy, hasCode, calm, sound,
+  gateUnlocked = true, gateRemaining = 0, gateTopicComplete = true, gatePercent = 0.6,
+  difficulty, mode, source, topics, onChange, onActivate, onClose,
+}: Props) {
   const juice = useArenaJuice(calm)
   const stake = DIFFICULTY[difficulty].stake
   const maxWin = reward(mode, stake, 1, mode === 'timed' ? 1 : 0)
   const needsTopic = source === 'topics' && topics.length === 0
   const canAfford = xp >= stake
-  const canStart = canAfford && !needsTopic
+  // Guests see the sign-in upsell instead, so the curriculum gate only applies
+  // to people who actually have progress to have made.
+  const gateBlocked = !locked && !gateUnlocked
+  const canStart = canAfford && !needsTopic && !gateBlocked
 
   const risk = (DIFF_RISK[difficulty] + MODE_RISK[mode]) / 2
 
@@ -279,9 +291,20 @@ export function ChallengeSetup({ xp, locked, busy, hasCode, calm, sound, difficu
                 <Flame className="h-4 w-4" />
               </motion.span>
             )}
-            {!canAfford ? `Need ${stake} XP (you have ${xp})` : needsTopic ? 'Pick at least one topic' : `Enter Arena (−${stake} XP)`}
+            {gateBlocked
+              ? 'Locked — finish more problems'
+              : !canAfford ? `Need ${stake} XP (you have ${xp})` : needsTopic ? 'Pick at least one topic' : `Enter Arena (−${stake} XP)`}
           </motion.button>
-          <p className="text-center text-[10px] text-muted-foreground">You have <strong className="text-foreground">{xp}</strong> XP. Staked on entry — win it back with a bonus, or forfeit it.</p>
+          {gateBlocked ? (
+            <p className="text-center text-[10px] leading-snug text-muted-foreground">
+              The arena opens at <strong className="text-foreground">{Math.round(gatePercent * 100)}%</strong> of the problems plus the whole{' '}
+              <strong className="text-foreground">Functions</strong> topic.
+              {gateRemaining > 0 && <> Solve <strong className="text-foreground">{gateRemaining}</strong> more{!gateTopicComplete && ', and finish Functions'}.</>}
+              {gateRemaining === 0 && !gateTopicComplete && <> Just <strong className="text-foreground">Functions</strong> left.</>}
+            </p>
+          ) : (
+            <p className="text-center text-[10px] text-muted-foreground">You have <strong className="text-foreground">{xp}</strong> XP. Staked on entry — win it back with a bonus, or forfeit it.</p>
+          )}
         </div>
       )}
     </motion.div>
