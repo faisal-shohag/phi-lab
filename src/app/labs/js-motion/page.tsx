@@ -100,7 +100,7 @@ import { ChallengeArena } from '@/components/visualizer/challenge-arena'
 import { ChallengeResult } from '@/components/visualizer/challenge-result'
 import { ChallengeRescue } from '@/components/visualizer/challenge-rescue'
 import { ArenaEntry, StakeBurn } from '@/components/visualizer/arena-fx'
-import { LeaderboardDialog } from '@/components/visualizer/leaderboard-dialog'
+import { LeaderboardSheet } from '@/components/visualizer/leaderboard-sheet'
 import { ProgressMap } from '@/components/visualizer/progress-map'
 import { AiChargeDialog } from '@/components/visualizer/ai-charge-dialog'
 import { isTopic, type Difficulty, type Mode, type ChallengeSource, type ChallengeTopic } from '@/lib/visualizer/challenge'
@@ -1521,7 +1521,7 @@ export default function Home() {
           onDecline={giveUpChallenge}
         />
       )}
-      <LeaderboardDialog open={leaderboardOpen} onOpenChange={setLeaderboardOpen} />
+      <LeaderboardSheet open={leaderboardOpen} onOpenChange={setLeaderboardOpen} />
       <ProgressMap
         open={mapOpen}
         onOpenChange={setMapOpen}
