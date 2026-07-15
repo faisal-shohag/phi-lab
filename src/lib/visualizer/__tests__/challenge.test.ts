@@ -1,58 +1,13 @@
+// The pure rules of Challenge Mode. Grading used to be tested here too, back
+// when it ran on the legacy interpreter out of this module; it now lives on the
+// QuickJS sandbox and is covered one-for-one by `grade-qjs.test.ts` — including
+// the load-bearing "cannot be beaten by hardcoding one output".
 import { describe, it, expect } from 'vitest'
 import {
-  runFn, grade, computeExpected, reward, streakMultiplier,
+  reward, streakMultiplier,
   rescuableFor, isAbandoned, RESCUE_GRACE_MS,
-  type HiddenTest, type RescueState,
+  type RescueState,
 } from '../challenge'
-
-const SUM = 'function solve(n){ let t=0; for(let i=1;i<=n;i++) t+=i; return t }'
-
-describe('runFn', () => {
-  it('calls the function and returns its JSON result', () => {
-    expect(runFn(SUM, 'solve', [5])).toBe('15')
-    expect(runFn(SUM, 'solve', [100])).toBe('5050')
-  })
-  it('returns null when the function is not defined', () => {
-    expect(runFn('const x = 1', 'solve', [5])).toBeNull()
-  })
-  it('returns null on an infinite loop (step cap)', () => {
-    expect(runFn('function solve(n){ while(true){} }', 'solve', [1])).toBeNull()
-  })
-  it('ignores the learner\'s own console.log noise', () => {
-    expect(runFn('function solve(n){ console.log("debug"); return n*2 }', 'solve', [3])).toBe('6')
-  })
-})
-
-describe('grade', () => {
-  const tests: HiddenTest[] = [
-    { args: [1], expected: '1' },
-    { args: [3], expected: '6' },
-    { args: [5], expected: '15' },
-  ]
-  it('passes a correct solution', () => {
-    expect(grade(SUM, 'solve', tests)).toEqual({ passed: 3, total: 3, allPass: true })
-  })
-  it('fails a wrong solution', () => {
-    const wrong = 'function solve(n){ return n }'
-    const r = grade(wrong, 'solve', tests)
-    expect(r.allPass).toBe(false)
-    expect(r.passed).toBe(1) // only solve(1)=1 matches
-  })
-  it('cannot be beaten by hardcoding one output', () => {
-    const cheat = 'function solve(n){ return 15 }'
-    expect(grade(cheat, 'solve', tests).allPass).toBe(false)
-  })
-})
-
-describe('computeExpected', () => {
-  it('derives expected outputs from a reference solution', () => {
-    const out = computeExpected(SUM, 'solve', [[1], [4]])
-    expect(out).toEqual([{ args: [1], expected: '1' }, { args: [4], expected: '10' }])
-  })
-  it('returns null if the reference does not run', () => {
-    expect(computeExpected('const x=1', 'solve', [[1]])).toBeNull()
-  })
-})
 
 describe('reward', () => {
   const S = 50

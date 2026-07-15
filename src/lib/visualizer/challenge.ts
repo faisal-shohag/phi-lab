@@ -1,8 +1,11 @@
-// Pure, dependency-clean core for Challenge Mode. Runs the learner's (and the
-// AI reference) code through the teaching interpreter to grade a submission
-// against hidden tests. No DB, no network — importable from routes and tests.
-
-import { interpret } from './interpreter'
+// Pure, dependency-clean core for Challenge Mode: stakes, modes, rewards, the
+// topic catalog, and the rescue rules. No DB, no network, no engine — safe to
+// import from client components, routes and tests alike.
+//
+// Grading does NOT live here. It runs on the QuickJS sandbox, behind the
+// server-only `grade.ts`. This module deliberately imports nothing that would
+// drag an engine into the client bundle: five client components import it just
+// for constants like AI_CHARGE and MODE.
 
 export type Difficulty = 'easy' | 'medium' | 'hard'
 export type Mode = 'oneshot' | 'retries' | 'timed'
@@ -89,9 +92,8 @@ export function isMode(v: unknown): v is Mode {
 // of topics they picked to drill.
 export type ChallengeSource = 'code' | 'topics'
 
-// The curated topic catalog for "Pick topics" mode. All stay inside the
-// interpreter's supported subset. Kept here so the activate route can reject
-// anything a client makes up.
+// The curated topic catalog for "Pick topics" mode. Kept here so the activate
+// route can reject anything a client makes up.
 export const CHALLENGE_TOPICS = [
   { id: 'arrays', label: 'Arrays' },
   { id: 'strings', label: 'Strings' },
@@ -117,79 +119,18 @@ export function topicLabel(id: ChallengeTopic): string {
   return CHALLENGE_TOPICS.find((t) => t.id === id)?.label ?? id
 }
 
+// The grading contract, shared by the sandbox grader (`grade-qjs.ts`) and the
+// routes that call it. Only these shapes are public — the hidden tests
+// themselves never leave the server.
 export interface HiddenTest {
   args: unknown[]
   expected: string
-}
-
-// A marker prefix so we can pick OUR harness line out of the learner's own
-// console.log noise.  never appears in normal output.
-const SENTINEL = 'R:'
-
-// Serialize a call argument into a JS literal the interpreter can parse. Only
-// JSON-shaped values are used for challenge inputs, so JSON.stringify is enough.
-function argLiteral(a: unknown): string {
-  return JSON.stringify(a)
-}
-
-/**
- * Run `code`, then call `fnName(...args)` and capture what it returns (as a
- * JSON string). Returns null if the program throws, loops past the step cap, or
- * never produces the marked line (e.g. the function isn't defined).
- */
-export function runFn(code: string, fnName: string, args: unknown[]): string | null {
-  const callArgs = args.map(argLiteral).join(', ')
-  const harness = `${code}\n;console.log(${JSON.stringify(SENTINEL)} + JSON.stringify(${fnName}(${callArgs})))`
-  let trace
-  try {
-    trace = interpret(harness, { maxSteps: 4000 })
-  } catch {
-    return null
-  }
-  if (trace.truncated) return null
-  // Last marked output wins (the harness line runs last).
-  let result: string | null = null
-  for (const s of trace.steps) {
-    if (s.kind === 'output' && typeof s.output === 'string' && s.output.startsWith(SENTINEL)) {
-      result = s.output.slice(SENTINEL.length)
-    }
-  }
-  return result
 }
 
 export interface GradeResult {
   passed: number
   total: number
   allPass: boolean
-}
-
-/** Grade a submission: run it against every hidden test, compare to expected. */
-export function grade(code: string, fnName: string, tests: HiddenTest[]): GradeResult {
-  let passed = 0
-  for (const t of tests) {
-    const got = runFn(code, fnName, t.args)
-    if (got !== null && got === t.expected) passed++
-  }
-  return { passed, total: tests.length, allPass: tests.length > 0 && passed === tests.length }
-}
-
-/**
- * Derive the expected output of each test input by running the AI's REFERENCE
- * solution — we never trust the model's claimed outputs. Returns null if the
- * reference itself doesn't run cleanly for every input (caller regenerates).
- */
-export function computeExpected(
-  referenceCode: string,
-  fnName: string,
-  testArgs: unknown[][],
-): HiddenTest[] | null {
-  const out: HiddenTest[] = []
-  for (const args of testArgs) {
-    const expected = runFn(referenceCode, fnName, args)
-    if (expected === null) return null
-    out.push({ args, expected })
-  }
-  return out
 }
 
 /**
