@@ -18,7 +18,7 @@ import {
 import { Compartment, type EditorState, type Extension, Prec, StateEffect, StateField } from '@codemirror/state'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { tags as t } from '@lezer/highlight'
-import { getParseError } from '@/lib/visualizer/interpreter'
+import { getParseError } from '@/lib/visualizer/parse'
 import type { StepKind } from '@/lib/visualizer/types'
 
 // Everything the editor needs to visualize the current execution step.

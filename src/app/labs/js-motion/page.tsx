@@ -20,7 +20,8 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { interpret, getParseError, RuntimeError } from '@/lib/visualizer/interpreter'
+import { interpret } from '@/lib/visualizer/interpreter'
+import { getParseError, RuntimeError } from '@/lib/visualizer/parse'
 import { playStepSound, playFinishSound, unlockAudio, playGoSting } from '@/lib/visualizer/sound'
 import { authClient } from '@/lib/auth-client'
 import { AiTutor, type TutorLang, type TutorRequest } from '@/components/visualizer/ai-tutor'
