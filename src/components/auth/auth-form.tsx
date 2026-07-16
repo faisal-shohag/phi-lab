@@ -17,13 +17,25 @@ type Mode = 'sign-in' | 'sign-up'
 /** Only allow same-origin relative redirects to avoid open-redirect abuse. */
 function safeRedirect(raw: string | null): string {
   if (raw && raw.startsWith('/') && !raw.startsWith('//')) return raw
-  return '/labs/interview'
+  return DEFAULT_REDIRECT
+}
+
+const DEFAULT_REDIRECT = '/labs/interview'
+
+// Where to come back to after signing in. Two spellings exist in the wild:
+// the interview lab's server guards send `?redirect=`, while every js-motion
+// guest upsell links to `?next=`. Only `redirect` was ever read, so every
+// `?next=` link silently fell through to the default and dropped the learner
+// into the interview lab — whichever lab they had actually come from.
+// Accept both rather than break whichever set of links loses the coin toss.
+function returnTo(params: URLSearchParams): string {
+  return safeRedirect(params.get('next') ?? params.get('redirect'))
 }
 
 export function AuthForm({ mode }: { mode: Mode }) {
   const router = useRouter()
   const params = useSearchParams()
-  const redirect = safeRedirect(params.get('redirect'))
+  const redirect = returnTo(params)
   const isSignUp = mode === 'sign-up'
 
   const [name, setName] = useState('')
@@ -53,7 +65,12 @@ export function AuthForm({ mode }: { mode: Mode }) {
     }
   }
 
-  const otherHref = `/${isSignUp ? 'sign-in' : 'sign-up'}}`
+  // Carry the return target across the sign-in ⇄ sign-up toggle: deciding you
+  // need an account shouldn't cost you your place. (This also had a stray brace
+  // that made the link 404.)
+  const otherHref = `/${isSignUp ? 'sign-in' : 'sign-up'}${
+    redirect === DEFAULT_REDIRECT ? '' : `?next=${encodeURIComponent(redirect)}`
+  }`
 
   return (
     <motion.div

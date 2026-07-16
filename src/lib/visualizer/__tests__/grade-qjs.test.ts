@@ -4,7 +4,7 @@ import type { HiddenTest } from '../challenge'
 
 const SUM = 'function solve(n){ let t=0; for(let i=1;i<=n;i++) t+=i; return t }'
 
-describe('runFnQjs — parity with the legacy grader', () => {
+describe('runFnQjs — the grading contract', () => {
   it('calls the function and returns its JSON result', async () => {
     expect(await runFnQjs(SUM, 'solve', [5])).toBe('15')
     expect(await runFnQjs(SUM, 'solve', [100])).toBe('5050')

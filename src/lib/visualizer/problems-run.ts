@@ -4,18 +4,12 @@
 // Why this and not the challenge grader (`grade.ts`)? That one calls a named
 // function and reads its return value. Practice problems are whole programs
 // judged on what they PRINT — including the async ones, where the order is the
-// whole lesson. Both trace producers already model the event loop (QuickJS via
-// `__runEventLoop`, the legacy interpreter via `runEventLoop`), so running the
-// program through them gives correct ordering for free and grades exactly what
-// the learner sees in the Console lane.
-//
-// Engine follows the same VIZ_GRADE_ENGINE switch as challenge grading, so a
-// deploy never ends up grading challenges and problems on different engines.
+// whole lesson. The trace producer already models the event loop (via
+// `__runEventLoop`), so running the program through it gives correct ordering
+// for free and grades exactly what the learner sees in the Console lane.
 import 'server-only'
 
-import { interpret } from './interpreter'
 import { traceQjs } from './trace-qjs'
-import { gradeEngine } from './grade'
 
 export interface RunOutput {
   /** The console.log lines, in order. null when the program never ran. */
@@ -27,10 +21,6 @@ export interface RunOutput {
 const MAX_OUTPUT_LINES = 200
 
 export async function runOutput(code: string): Promise<RunOutput> {
-  return gradeEngine() === 'quickjs' ? runOutputQjs(code) : runOutputLegacy(code)
-}
-
-async function runOutputQjs(code: string): Promise<RunOutput> {
   let result
   try {
     result = await traceQjs(code)
@@ -42,18 +32,6 @@ async function runOutputQjs(code: string): Promise<RunOutput> {
     return { lines: null, error: 'The program ran too long — check for a loop that never ends.' }
   }
   return { lines: collect(result.trace.steps) }
-}
-
-function runOutputLegacy(code: string): RunOutput {
-  try {
-    const trace = interpret(code, { maxSteps: 5000 })
-    if (trace.truncated) {
-      return { lines: null, error: 'The program ran too long — check for a loop that never ends.' }
-    }
-    return { lines: collect(trace.steps) }
-  } catch (e) {
-    return { lines: null, error: e instanceof Error ? e.message : String(e) }
-  }
 }
 
 function collect(steps: { kind: string; output?: string }[]): string[] {

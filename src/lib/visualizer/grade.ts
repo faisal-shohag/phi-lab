@@ -1,33 +1,27 @@
-// Server-only grading dispatcher. Picks the grading engine behind a flag so we
-// can roll out the QuickJS real-JS grader without ripping out the legacy
-// interpreter grader until parity is proven.
+// Server-only grading boundary. Grading runs on the QuickJS sandbox: real JS,
+// so a solution using regex, generators or a real throw/catch grades the same
+// way it would in Node.
 //
-//   VIZ_GRADE_ENGINE=quickjs  → full-JS QuickJS sandbox (regex, generators, …)
-//   (anything else / unset)   → legacy teaching-interpreter grader
+// This used to dispatch between QuickJS and the legacy teaching interpreter on
+// a VIZ_GRADE_ENGINE env var. That flag is gone, and its removal is a fix, not
+// just cleanup: it defaulted to LEGACY when unset, so any deploy that lost the
+// env var silently started failing every valid full-JS solution.
 //
-// Both expose the same async contract, so routes just `await` these regardless
-// of the engine. NEVER import from client code — the quickjs path pulls in wasm.
+// The indirection stays as the one named seam the routes import, so an engine
+// or worker change lands here instead of in every route.
+//
+// NEVER import from client code — this pulls in the QuickJS wasm.
 import 'server-only'
 
-import { grade as legacyGrade, runFn as legacyRunFn, computeExpected as legacyComputeExpected, type HiddenTest, type GradeResult } from './challenge'
+import type { HiddenTest, GradeResult } from './challenge'
 import { gradeQjs, runFnQjs, computeExpectedQjs } from './grade-qjs'
 
-export type GradeEngine = 'quickjs' | 'legacy'
-
-export function gradeEngine(): GradeEngine {
-  return process.env.VIZ_GRADE_ENGINE === 'quickjs' ? 'quickjs' : 'legacy'
-}
-
 export async function runFn(code: string, fnName: string, args: unknown[]): Promise<string | null> {
-  return gradeEngine() === 'quickjs'
-    ? runFnQjs(code, fnName, args)
-    : legacyRunFn(code, fnName, args)
+  return runFnQjs(code, fnName, args)
 }
 
 export async function grade(code: string, fnName: string, tests: HiddenTest[]): Promise<GradeResult> {
-  return gradeEngine() === 'quickjs'
-    ? gradeQjs(code, fnName, tests)
-    : legacyGrade(code, fnName, tests)
+  return gradeQjs(code, fnName, tests)
 }
 
 export async function computeExpected(
@@ -35,7 +29,5 @@ export async function computeExpected(
   fnName: string,
   testArgs: unknown[][],
 ): Promise<HiddenTest[] | null> {
-  return gradeEngine() === 'quickjs'
-    ? computeExpectedQjs(referenceCode, fnName, testArgs)
-    : legacyComputeExpected(referenceCode, fnName, testArgs)
+  return computeExpectedQjs(referenceCode, fnName, testArgs)
 }

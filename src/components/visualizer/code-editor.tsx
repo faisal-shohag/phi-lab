@@ -16,8 +16,12 @@ import {
   keymap,
 } from '@codemirror/view'
 import { Compartment, type EditorState, type Extension, Prec, StateEffect, StateField } from '@codemirror/state'
+// Ours and theirs, one line each: the theme lives in the shared editor-theme
+// module (extracted so pixel-lab and js-motion stay one editor), and
+// getParseError moved to lib/visualizer/parse when master retired the legacy
+// grader — interpreter.ts only re-exports it now.
 import { editorChromeTheme, syntaxTheme, useIsDarkClass } from '@/components/editor/editor-theme'
-import { getParseError } from '@/lib/visualizer/interpreter'
+import { getParseError } from '@/lib/visualizer/parse'
 import type { StepKind } from '@/lib/visualizer/types'
 
 // Everything the editor needs to visualize the current execution step.
