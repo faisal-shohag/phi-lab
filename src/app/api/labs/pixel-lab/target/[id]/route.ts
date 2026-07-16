@@ -46,9 +46,11 @@ export async function GET(request: Request, ctx: RouteContext<'/api/labs/pixel-l
     return new Response(new Uint8Array(target.png), {
       headers: { 'Content-Type': 'image/png', ETag: etag, 'Cache-Control': CACHE },
     })
-  } catch {
+  } catch (err) {
     // An authoring gap — the reference is missing or does not render. Nothing the
-    // learner can do, so do not dress it up as their 404.
+    // learner can do, so do not dress it up as their 404. The cause goes to the
+    // function log, where whoever can fix it will look.
+    console.error('[pixel-lab] target render failed:', err)
     return Response.json({ error: 'TARGET_UNAVAILABLE' }, { status: 503 })
   }
 }
