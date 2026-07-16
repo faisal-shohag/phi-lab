@@ -6,6 +6,13 @@
 // A right sheet rather than a centred dialog: the board is a tall, narrow list,
 // and sliding it in keeps the editor visible behind, so checking your rank
 // doesn't feel like leaving what you were doing.
+//
+// Shared by every lab that ranks people, which is why it takes an `endpoint`
+// rather than knowing one. Each lab's route returns the same shape (see
+// lib/hive/leaderboard.ts for the ISO-week helpers they all build on), so the
+// only thing that differs between boards is the URL and what to say when nobody
+// has scored yet. The flame is deliberately *not* per-lab: a learner should
+// recognise a leaderboard on sight, wherever they meet one.
 
 import { useEffect, useState } from 'react'
 import { Flame, Loader2, Crown } from 'lucide-react'
@@ -40,7 +47,16 @@ function initials(name: string): string {
   return name.slice(0, 2).toUpperCase()
 }
 
-export function LeaderboardSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+export interface LeaderboardSheetProps {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  /** A GET returning `{ week, rows, you, meId }`. */
+  endpoint: string
+  /** Shown when the board is empty. Name what earns XP *in this lab* — "solve a problem" is no help in Pixel Lab. */
+  emptyMessage: string
+}
+
+export function LeaderboardSheet({ open, onOpenChange, endpoint, emptyMessage }: LeaderboardSheetProps) {
   const [data, setData] = useState<Data | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -48,13 +64,13 @@ export function LeaderboardSheet({ open, onOpenChange }: { open: boolean; onOpen
     if (!open) return
     /* eslint-disable react-hooks/set-state-in-effect */
     setLoading(true)
-    fetch('/api/labs/js-motion/leaderboard')
+    fetch(endpoint)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setData(d))
       .catch(() => setData(null))
       .finally(() => setLoading(false))
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [open])
+  }, [open, endpoint])
 
   // A podium needs three to stand on. Below that the board is just a list, and
   // rank is its plain number.
@@ -95,9 +111,7 @@ export function LeaderboardSheet({ open, onOpenChange }: { open: boolean; onOpen
               <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-linear-to-br from-rose-500 to-orange-600 opacity-40">
                 <Flame className="h-6 w-6 text-white" />
               </span>
-              <p className="max-w-[15rem] text-sm text-muted-foreground">
-                Nobody has earned XP yet this week. Solve a problem, squash a bug, or win a challenge to light the board up.
-              </p>
+              <p className="max-w-[15rem] text-sm text-muted-foreground">{emptyMessage}</p>
             </div>
           ) : (
             <>

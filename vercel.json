@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "src/app/api/labs/pixel-lab/**": {
+      "maxDuration": 60
+    }
+  },
   "crons": [
     {
       "path": "/api/hive/cleanup",

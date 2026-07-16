@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { javascript } from '@codemirror/lang-javascript'
 import { linter, type Diagnostic } from '@codemirror/lint'
@@ -16,8 +16,7 @@ import {
   keymap,
 } from '@codemirror/view'
 import { Compartment, type EditorState, type Extension, Prec, StateEffect, StateField } from '@codemirror/state'
-import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
-import { tags as t } from '@lezer/highlight'
+import { editorChromeTheme, syntaxTheme, useIsDarkClass } from '@/components/editor/editor-theme'
 import { getParseError } from '@/lib/visualizer/interpreter'
 import type { StepKind } from '@/lib/visualizer/types'
 
@@ -275,20 +274,15 @@ const parseLinter = linter(
 )
 
 // ---------------------------------------------------------------------------
-// Themes — light and dark palettes matching the app's slate/amber design.
+// Themes — the visualizer's own layer, on top of the shared editor chrome.
+//
+// Editor furniture (font, gutters, selection, syntax colours, the light/dark
+// switch) lives in components/editor/editor-theme.ts and is shared with Pixel
+// Lab. What stays here is what only this lab has: the execution bar, ghost text,
+// breakpoint dots and focus-mode dimming.
 // ---------------------------------------------------------------------------
 
 const baseTheme = EditorView.theme({
-  '&': { fontSize: '13px', height: '100%', backgroundColor: 'transparent' },
-  '.cm-scroller': {
-    fontFamily: 'var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-    lineHeight: '1.6',
-    position: 'relative',
-  },
-  '.cm-content': { paddingTop: '8px', paddingBottom: '8px' },
-  '&.cm-focused': { outline: 'none' },
-  '.cm-gutters': { border: 'none', userSelect: 'none' },
-  '.cm-lineNumbers .cm-gutterElement': { paddingLeft: '6px', paddingRight: '10px', minWidth: '32px' },
   '.cm-bp-gutter': { width: '14px', cursor: 'pointer' },
   '.cm-bp-dot': {
     width: '9px',
@@ -306,10 +300,6 @@ const baseTheme = EditorView.theme({
     opacity: '0.8',
     pointerEvents: 'none',
   },
-  '.cm-error-line': {
-    backgroundColor: 'rgba(244, 63, 94, 0.14)',
-    boxShadow: 'inset 3px 0 0 0 #f43f5e',
-  },
   '.cm-dim-line': {
     opacity: '0.32',
     transition: 'opacity 0.25s ease',
@@ -326,9 +316,6 @@ const baseTheme = EditorView.theme({
 })
 
 interface Palette {
-  gutterText: string
-  gutterActiveText: string
-  selection: string
   ghost: string
   fnRegion: string
   callsiteBorder: string
@@ -345,12 +332,6 @@ function execTheme(p: Palette, dark: boolean): Extension {
   }
   return EditorView.theme(
     {
-      '.cm-gutters': { backgroundColor: 'transparent', color: p.gutterText },
-      '.cm-activeLineGutter': { backgroundColor: 'transparent', color: p.gutterActiveText },
-      '.cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection': {
-        backgroundColor: `${p.selection} !important`,
-      },
-      '.cm-cursor': { borderLeftColor: dark ? '#f1f5f9' : '#0f172a' },
       '.cm-ghost': { color: p.ghost },
       '.cm-fn-region': { backgroundColor: p.fnRegion },
       '.cm-callsite': { boxShadow: `inset 3px 0 0 0 ${p.callsiteBorder}` },
@@ -361,9 +342,6 @@ function execTheme(p: Palette, dark: boolean): Extension {
 }
 
 const lightPalette: Palette = {
-  gutterText: '#94a3b8',
-  gutterActiveText: '#0f172a',
-  selection: 'rgba(245, 158, 11, 0.25)',
   ghost: '#b45309',
   fnRegion: 'rgba(20, 184, 166, 0.07)',
   callsiteBorder: 'rgba(245, 158, 11, 0.55)',
@@ -380,9 +358,6 @@ const lightPalette: Palette = {
 }
 
 const darkPalette: Palette = {
-  gutterText: '#64748b',
-  gutterActiveText: '#f1f5f9',
-  selection: 'rgba(245, 158, 11, 0.30)',
   ghost: '#fbbf24',
   fnRegion: 'rgba(20, 184, 166, 0.10)',
   callsiteBorder: 'rgba(251, 191, 36, 0.55)',
@@ -398,54 +373,12 @@ const darkPalette: Palette = {
   },
 }
 
-const lightSyntax = HighlightStyle.define([
-  { tag: [t.keyword, t.controlKeyword, t.moduleKeyword], color: '#c026d3', fontWeight: '600' },
-  { tag: [t.comment], color: '#94a3b8', fontStyle: 'italic' },
-  { tag: [t.number, t.bool], color: '#0284c7' },
-  { tag: [t.string, t.special(t.string)], color: '#059669' },
-  { tag: [t.function(t.variableName), t.function(t.propertyName)], color: '#d97706' },
-  { tag: [t.punctuation, t.operator], color: '#64748b' },
-  { tag: [t.variableName], color: '#0f172a' },
-  { tag: [t.propertyName], color: '#334155' },
-  { tag: [t.className, t.standard(t.variableName)], color: '#8b5cf6' },
-  { tag: [t.null, t.atom], color: '#c026d3' },
-])
-
-const darkSyntax = HighlightStyle.define([
-  { tag: [t.keyword, t.controlKeyword, t.moduleKeyword], color: '#e879f9', fontWeight: '600' },
-  { tag: [t.comment], color: '#64748b', fontStyle: 'italic' },
-  { tag: [t.number, t.bool], color: '#38bdf8' },
-  { tag: [t.string, t.special(t.string)], color: '#34d399' },
-  { tag: [t.function(t.variableName), t.function(t.propertyName)], color: '#fbbf24' },
-  { tag: [t.punctuation, t.operator], color: '#94a3b8' },
-  { tag: [t.variableName], color: '#e2e8f0' },
-  { tag: [t.propertyName], color: '#cbd5e1' },
-  { tag: [t.className, t.standard(t.variableName)], color: '#a78bfa' },
-  { tag: [t.null, t.atom], color: '#e879f9' },
-])
-
-const lightTheme: Extension = [execTheme(lightPalette, false), syntaxHighlighting(lightSyntax)]
-const darkTheme: Extension = [execTheme(darkPalette, true), syntaxHighlighting(darkSyntax)]
+const lightTheme: Extension = [syntaxTheme(false), execTheme(lightPalette, false)]
+const darkTheme: Extension = [syntaxTheme(true), execTheme(darkPalette, true)]
 
 // Theme lives in a compartment so switching light/dark reconfigures the live
 // editor in place — no re-creation, document and undo history untouched.
 const themeCompartment = new Compartment()
-
-// Watch the `dark` class on <html> directly: the theme can be flipped either
-// by next-themes or by AnimatedThemeToggler (which mutates the class without
-// going through next-themes), so useTheme() alone would miss changes.
-function useIsDarkClass(): boolean {
-  const [isDark, setIsDark] = useState(false)
-  useEffect(() => {
-    const root = document.documentElement
-    const update = () => setIsDark(root.classList.contains('dark'))
-    update()
-    const observer = new MutationObserver(update)
-    observer.observe(root, { attributes: true, attributeFilter: ['class'] })
-    return () => observer.disconnect()
-  }, [])
-  return isDark
-}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -504,6 +437,7 @@ export function CodeEditor({
     /* eslint-enable react-hooks/refs */
     return [
       javascript(),
+      editorChromeTheme,
       baseTheme,
       themeCompartment.of([]),
       highlightField,
