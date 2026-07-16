@@ -87,11 +87,7 @@ const STARTER_CSS = `/* You write the CSS. The HTML, the reset and the font are 
    }
 
    Colours and gradients both work — background: linear-gradient(...) is fine.
-   Images are not: this lab is pure CSS.
-
-   To colour the whole canvas, style body like on any normal page:
-
-   body { background: red; } */
+   Images are not: this lab is pure CSS. */
 `
 
 // Targets are served by a route and exist nowhere on disk — each one is rendered
