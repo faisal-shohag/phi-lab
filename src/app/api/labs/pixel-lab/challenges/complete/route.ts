@@ -112,6 +112,9 @@ export async function POST(request: Request) {
     target = await getTarget(challenge.id)
     submission = PNG.sync.read(await renderToPng({ html, css }, challenge.canvas))
   } catch (err) {
+    // The learner sees a category; the function log gets the cause. Without
+    // this the production 503 said nothing anywhere about why.
+    console.error('[pixel-lab] scoring failed:', err)
     if (err instanceof RenderError) {
       return fail('RENDER_FAILED', 'Could not render your build. Try again in a moment.', 502)
     }

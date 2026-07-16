@@ -78,6 +78,7 @@ async function executablePath(): Promise<string> {
 }
 
 async function launch(): Promise<Browser> {
+  const production = process.env.NODE_ENV === 'production'
   return puppeteer.launch({
     args: [
       ...chromium.args,
@@ -86,7 +87,12 @@ async function launch(): Promise<Browser> {
       '--force-color-profile=srgb',
     ],
     executablePath: await executablePath(),
-    headless: true,
+    // The sparticuz binary is a *headless shell* build — chromium.args already
+    // says so with --headless='shell'. Modern puppeteer-core reads
+    // `headless: true` as the new headless mode and appends its own conflicting
+    // flag; 'shell' is the mode that binary actually is. Locally we drive a
+    // full Chrome, where 'shell' would be the wrong claim.
+    headless: production ? 'shell' : true,
   })
 }
 
@@ -146,7 +152,19 @@ export class RenderError extends Error {
  * requires of both its inputs.
  */
 export async function renderToPng(source: FrameSource, canvas: Canvas): Promise<Buffer> {
-  const browser = await getBrowser()
+  // Wrapped so a launch failure surfaces as a RenderError like every other
+  // render failure. Unwrapped it fell through to the route's "no target" 503,
+  // which blamed the challenge for what was an infrastructure fault — and
+  // logged nothing.
+  let browser: Browser
+  try {
+    browser = await getBrowser()
+  } catch (err) {
+    throw new RenderError(
+      `chromium failed to launch: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    )
+  }
   rendersOnBrowser++
 
   const page = await browser.newPage()
