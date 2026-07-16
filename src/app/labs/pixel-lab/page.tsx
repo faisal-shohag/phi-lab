@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import confetti from 'canvas-confetti'
 import { ChevronUp, Clock, Code2, Grid2x2Check, Loader2, Lock, Map as MapIcon, Play, Target, Trophy } from 'lucide-react'
@@ -38,7 +38,8 @@ import {
 } from '@/lib/pixel/unlock'
 import { cn } from '@/lib/utils'
 
-const FIRST = PIXEL_TOPICS[0].challenges[0]
+const ALL = PIXEL_TOPICS.flatMap((t) => t.challenges)
+const FIRST = ALL[0]
 
 export default function PixelLabPage() {
   const { data: session, isPending: sessionPending } = authClient.useSession()
@@ -66,6 +67,8 @@ export default function PixelLabPage() {
   const [scoreOpen, setScoreOpen] = useState(false)
   const [justOpened, setJustOpened] = useState<string[]>([])
   const [progressLoaded, setProgressLoaded] = useState(false)
+  // Whether the once-per-visit jump to the learner's current challenge has run.
+  const landedRef = useRef(false)
 
   const source = useMemo<FrameSource>(() => ({ html, css }), [html, css])
   const states = useMemo(() => unlockStates(tiersByChallenge), [tiersByChallenge])
@@ -104,7 +107,21 @@ export default function PixelLabPage() {
   useEffect(() => {
     if (!signedIn) return
     /* eslint-disable react-hooks/set-state-in-effect */
-    void loadProgress()
+    void loadProgress().then((tiers) => {
+      // Land the returning learner where they actually are, not on challenge
+      // one every time. Once, on the first progress load only — after that the
+      // map is the navigator and this must never yank a challenge they chose.
+      if (landedRef.current) return
+      landedRef.current = true
+      const id = nextChallengeId(tiers)
+      // Everything cleared: null next, so stand on the final challenge.
+      const here = (id ? ALL.find((c) => c.id === id) : ALL[ALL.length - 1]) ?? FIRST
+      if (here.id === FIRST.id) return
+      setChallenge(here)
+      const draft = loadDraft(here.id)
+      setHtml(draft?.html ?? here.starterHtml)
+      setCss(draft?.css ?? here.starterCss)
+    })
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [loadProgress, signedIn])
 
