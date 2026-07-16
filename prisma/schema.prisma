@@ -59,6 +59,7 @@ model User {
   support           SupportSession[]
   xpEvents          XpEvent[]
   badges            UserBadge[]
+  pixelSubmissions  PixelSubmission[]
   challengeAttempts ChallengeAttempt[]
   hivePosts         HivePost[]         @relation("PostAuthor")
   assignedHivePosts HivePost[]         @relation("PostMentor")
@@ -123,6 +124,40 @@ model XpEvent {
   @@unique([userId, reason, sourceId])
   @@index([userId, createdAt])
   @@map("xp_event")
+}
+
+// Every scored Pixel Lab attempt, with the code that produced it.
+//
+// Why this exists when progress already derives from XpEvent: the ledger is
+// idempotent, so it only ever records the *first* time a tier was earned. It
+// cannot answer "what have I tried, and did it get better" — a re-score that
+// improves 46% to 92% writes nothing at all. This is the attempt log, not the
+// receipt: append-only, one row per submit, keeping the html/css so a learner
+// can read back what they actually wrote.
+//
+// Not a source of truth for XP or unlocks. Those stay derived from XpEvent, so
+// this table can be pruned or lost without anyone losing progress.
+model PixelSubmission {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  challengeId String
+  html        String
+  css         String
+  // 0…1, the union-based score that pays XP (src/lib/pixel/score.ts).
+  score       Float
+  // 0…1, the raw pixel match. Kept beside `score` because they answer different
+  // questions and the panel shows both.
+  match       Float
+  diffPixels  Int
+  unionPixels Int
+  // Tiers this attempt cleared, e.g. ["standing","close"]. What it *earned* is a
+  // question for the ledger — a re-score clears tiers it was already paid for.
+  tiers       String[] @default([])
+  createdAt   DateTime @default(now())
+
+  @@index([userId, challengeId, createdAt])
+  @@map("pixel_submission")
 }
 
 // Unlocked achievements. Badge definitions live in code

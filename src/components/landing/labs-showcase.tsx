@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { Cpu, Mic, GraduationCap, Languages, LifeBuoy, ArrowRight } from 'lucide-react'
+import { Cpu, Mic, GraduationCap, Grid2x2Check, Languages, LifeBuoy, ArrowRight } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Reveal, RevealItem } from './reveal'
@@ -14,6 +14,7 @@ const INTERVIEW_CHIPS = ['10 topics · HTML → MongoDB', 'Live transcript', 'Ge
 const FEYNMAN_CHIPS = ['Teach it out loud', 'AI asks the naive questions', 'Clarity score', 'Mirror test']
 const ENGLISH_CHIPS = ['5 work scenarios', 'Voice roleplay', 'Say-it-better fixes', 'Fluency score']
 const SUPPORT_CHIPS = ['Live voice help', 'Coding · mental · guidance', 'Share your screen', '10-minute sessions']
+const PIXEL_CHIPS = ['27 challenges · navbars → whole pages', 'Scored in a real browser', 'Diff & slide compare', 'Unlock the run']
 
 const CODE_LINES = ['function push(stack, v) {', '  stack.push(v)', '  return stack', '}']
 
@@ -172,8 +173,66 @@ function SupportMockup() {
   )
 }
 
+/**
+ * A navbar being matched: the target above, your build below, closing on it.
+ *
+ * The other mockups show the lab's *surface* — code, a transcript, a score ring.
+ * This one shows the loop, because the loop is the whole idea: there is a thing,
+ * you rebuild the thing, a number says how close. The bar sliding to 100% is the
+ * only honest way to say that in a card.
+ */
+function PixelMockup() {
+  const animated = useAmbientMotion()
+  return (
+    <div className="mt-5 space-y-2 rounded-lg border border-border bg-slate-950 p-3 shadow-inner">
+      <p className="font-mono text-[9px] uppercase tracking-widest text-slate-500">target</p>
+      <div className="flex items-center gap-2 rounded bg-white px-2 py-1.5">
+        <span className="text-[9px] font-bold text-slate-900">phi</span>
+        <span className="ml-auto flex gap-1.5">
+          {['Labs', 'Hive'].map((t) => (
+            <span key={t} className="text-[8px] text-slate-500">
+              {t}
+            </span>
+          ))}
+        </span>
+      </div>
+
+      <p className="font-mono text-[9px] uppercase tracking-widest text-slate-500">yours</p>
+      <div className="relative flex items-center gap-2 overflow-hidden rounded bg-white px-2 py-1.5">
+        <span className="text-[9px] font-bold text-slate-900">phi</span>
+        <span className="ml-auto flex gap-1.5">
+          {['Labs', 'Hive'].map((t) => (
+            <span key={t} className="text-[8px] text-slate-500">
+              {t}
+            </span>
+          ))}
+        </span>
+        {animated && (
+          // The wipe: your build resolving onto the target, over and over.
+          <motion.div
+            className="absolute inset-y-0 right-0 bg-pink-500/20"
+            animate={{ width: ['70%', '0%', '70%'] }}
+            transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+          />
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 pt-1">
+        <div className="h-1 flex-1 overflow-hidden rounded-full bg-slate-800">
+          <motion.div
+            className="h-full rounded-full bg-linear-to-r from-pink-500 to-emerald-400"
+            animate={animated ? { width: ['30%', '100%', '30%'] } : { width: '100%' }}
+            transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+          />
+        </div>
+        <span className="font-mono text-[9px] font-bold text-emerald-400 tabular-nums">100%</span>
+      </div>
+    </div>
+  )
+}
+
 interface LabCardProps {
-  accent: 'amber' | 'violet' | 'indigo' | 'cyan' | 'rose'
+  accent: 'amber' | 'violet' | 'indigo' | 'cyan' | 'rose' | 'pink'
   icon: React.ReactNode
   title: string
   description: string
@@ -198,7 +257,9 @@ function LabCard({ accent, icon, title, description, chips, href, mockup }: LabC
                 ? 'border-border hover:border-sky-400'
                 : accent === 'rose'
                   ? 'border-border hover:border-rose-400'
-                  : 'border-border hover:border-violet-400',
+                  : accent === 'pink'
+                    ? 'border-border hover:border-pink-400'
+                    : 'border-border hover:border-violet-400',
         )}
       >
         <div
@@ -212,7 +273,10 @@ function LabCard({ accent, icon, title, description, chips, href, mockup }: LabC
                   ? 'bg-linear-to-br from-sky-500 to-teal-500'
                   : accent === 'rose'
                     ? 'bg-linear-to-br from-rose-500 to-pink-600'
-                    : 'bg-linear-to-br from-violet-500 to-fuchsia-600',
+                    : accent === 'pink'
+                      ? // The lab's own logo gradient, so the card and the header agree.
+                        'bg-linear-to-br from-pink-500 via-fuchsia-500 to-violet-600'
+                      : 'bg-linear-to-br from-violet-500 to-fuchsia-600',
           )}
         >
           {icon}
@@ -245,7 +309,7 @@ export function LabsShowcase() {
   return (
     <section id="labs" className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
       <Reveal className="text-center">
-        <h2 className="text-2xl font-bold sm:text-3xl">Five labs. One goal: make it click.</h2>
+        <h2 className="text-2xl font-bold sm:text-3xl">Six labs. One goal: make it click.</h2>
         <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground sm:text-base">
           Every concept here is something you run, watch, or say — not just something you read.
         </p>
@@ -262,7 +326,17 @@ export function LabsShowcase() {
           mockup={<JsMotionMockup />}
         />
 
-        
+        <LabCard
+          accent="pink"
+          icon={<Grid2x2Check className="h-5 w-5" />}
+          title="Pixel Lab"
+          description="Rebuild a UI from a picture in HTML and CSS. Your code renders in a real browser on our side and gets diffed against the target, pixel by pixel."
+          chips={PIXEL_CHIPS}
+          href="/labs/pixel-lab"
+          mockup={<PixelMockup />}
+        />
+
+
         <LabCard
           accent="violet"
           icon={<Mic className="h-5 w-5" />}

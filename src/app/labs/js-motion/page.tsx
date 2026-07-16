@@ -101,7 +101,7 @@ import { ChallengeArena } from '@/components/visualizer/challenge-arena'
 import { ChallengeResult } from '@/components/visualizer/challenge-result'
 import { ChallengeRescue } from '@/components/visualizer/challenge-rescue'
 import { ArenaEntry, StakeBurn } from '@/components/visualizer/arena-fx'
-import { LeaderboardSheet } from '@/components/visualizer/leaderboard-sheet'
+import { LeaderboardSheet } from '@/components/gamification/leaderboard-sheet'
 import { ProgressMap } from '@/components/visualizer/progress-map'
 import { AiChargeDialog } from '@/components/visualizer/ai-charge-dialog'
 import { isTopic, type Difficulty, type Mode, type ChallengeSource, type ChallengeTopic } from '@/lib/visualizer/challenge'
@@ -1522,7 +1522,12 @@ export default function Home() {
           onDecline={giveUpChallenge}
         />
       )}
-      <LeaderboardSheet open={leaderboardOpen} onOpenChange={setLeaderboardOpen} />
+      <LeaderboardSheet
+        open={leaderboardOpen}
+        onOpenChange={setLeaderboardOpen}
+        endpoint="/api/labs/js-motion/leaderboard"
+        emptyMessage="Nobody has earned XP yet this week. Solve a problem, squash a bug, or win a challenge to light the board up."
+      />
       <ProgressMap
         open={mapOpen}
         onOpenChange={setMapOpen}

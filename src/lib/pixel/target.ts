@@ -1,0 +1,114 @@
+// The target: what a learner is matching, and what their submission is diffed
+// against.
+//
+// It is not a file. It is a *render of the reference source*, produced on
+// demand by the same renderer their submission goes through. Nothing is stored,
+// which is the point — an earlier build committed 27 PNGs and had to carry a
+// standing warning that editing a reference without regenerating meant scoring
+// everyone against a picture nobody could reproduce. There is now no second
+// artifact to fall out of step with, so that class of bug cannot be written.
+//
+// The cost of rendering the reference on every submission is paid once per
+// process by the cache below, keyed by the reference's own content. A hash key
+// rather than a challenge id because it makes the cache self-invalidating: edit
+// a reference and the key changes, so a stale entry is unreachable rather than
+// wrong.
+
+import 'server-only'
+
+import { createHash } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+
+import { PNG } from 'pngjs'
+
+import { challengeById, type Canvas } from './challenges'
+import { isRenderedReference, referenceFor } from './challenges-expected'
+import { renderToPng } from './render'
+
+export interface TargetImage {
+  png: Buffer
+  data: Uint8Array
+  width: number
+  height: number
+  /** Identifies the reference that produced this, for ETags. */
+  hash: string
+}
+
+/**
+ * 27 targets at roughly 50KB each is about 1.3MB — small enough that eviction
+ * would cost more than it saves. Keyed by content hash, so a reference edit
+ * orphans its entry rather than serving a stale one; a process that somehow
+ * outlived many edits would grow, but a deploy replaces the process anyway.
+ */
+const cache = new Map<string, TargetImage>()
+
+function hashOf(reference: { html: string; css: string } | { targetFile: string }): string {
+  const material = 'targetFile' in reference ? `file:${reference.targetFile}` : reference.html + '\u0000' + reference.css
+  return createHash('sha256').update(material).digest('hex').slice(0, 16)
+}
+
+/** Designer art: no code to render, so it is read from disk. Nothing ships one today. */
+async function readTargetFile(name: string): Promise<Buffer> {
+  if (!/^[a-z0-9-]+\.png$/.test(name)) throw new Error(`unsafe target file name: ${name}`)
+  return readFile(join(process.cwd(), 'pixel-targets', name))
+}
+
+export class TargetError extends Error {}
+
+/**
+ * The target for a challenge, rendered or cached.
+ *
+ * Throws rather than returning null on an authoring mistake: a missing or
+ * unrenderable reference is our bug, and scoring the learner zero for it would
+ * be the wrong answer to give them.
+ */
+export async function getTarget(challengeId: string): Promise<TargetImage> {
+  const challenge = challengeById(challengeId)
+  if (!challenge) throw new TargetError(`no such challenge: ${challengeId}`)
+
+  const reference = referenceFor(challengeId)
+  if (!reference) throw new TargetError(`${challengeId} has no reference`)
+
+  const hash = hashOf(reference)
+  const hit = cache.get(hash)
+  if (hit) return hit
+
+  const png = isRenderedReference(reference)
+    ? await renderToPng(reference, challenge.canvas)
+    : await readTargetFile(reference.targetFile)
+
+  const decoded = PNG.sync.read(png)
+  if (!matchesCanvas(decoded, challenge.canvas)) {
+    throw new TargetError(
+      `${challengeId} target is ${decoded.width}x${decoded.height}, canvas is ${challenge.canvas.width}x${challenge.canvas.height}`,
+    )
+  }
+
+  const target: TargetImage = {
+    png,
+    data: new Uint8Array(decoded.data),
+    width: decoded.width,
+    height: decoded.height,
+    hash,
+  }
+  cache.set(hash, target)
+  return target
+}
+
+function matchesCanvas(png: { width: number; height: number }, canvas: Canvas): boolean {
+  return png.width === canvas.width && png.height === canvas.height
+}
+
+/**
+ * The ETag for a challenge's target, without rendering it.
+ *
+ * Lets the route answer a conditional request for free — the hash comes from the
+ * reference source, which is already in memory, so a 304 costs no Chromium at
+ * all. That matters: Vercel's Hobby plan includes 4 Active CPU-hours a month and
+ * a render spends real ones.
+ */
+export function targetEtag(challengeId: string): string | null {
+  const reference = referenceFor(challengeId)
+  return reference ? `"${hashOf(reference)}"` : null
+}

@@ -41,3 +41,8 @@ yarn-error.log*
 next-env.d.ts
 
 /src/generated/prisma
+
+# Pixel Lab target renders — output of scripts/dump-targets.mjs, for eyeballing
+# only. The references in lib/pixel/challenges-expected.ts are the source of
+# truth; these are regenerated from them on demand and nothing reads them.
+/pixel-targets

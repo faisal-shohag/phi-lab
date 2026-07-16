@@ -9,6 +9,19 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    // DIRECT_URL, not DATABASE_URL — and this is the whole reason migrations
+    // could not run.
+    //
+    // DATABASE_URL is Supabase's *transaction* pooler (port 6543,
+    // pgbouncer=true). A pooled connection cannot hold the advisory locks DDL
+    // needs, so `prisma migrate` against it does not fail — it hangs, silently,
+    // and the only prompt it ever surfaces is an offer to reset the database.
+    // DIRECT_URL is the same database over the session pooler (5432), which can.
+    //
+    // Only the CLI reads this. The app connects through the driver adapter in
+    // src/lib/prisma.ts, which keeps using the transaction pooler — that is the
+    // right choice for serverless, where a fresh pool per cold start would
+    // otherwise exhaust the connection limit.
+    url: process.env["DIRECT_URL"] ?? process.env["DATABASE_URL"],
   },
 });
