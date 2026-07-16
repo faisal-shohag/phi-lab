@@ -20,7 +20,7 @@ function safeRedirect(raw: string | null): string {
   return DEFAULT_REDIRECT
 }
 
-const DEFAULT_REDIRECT = '/labs/interview'
+const DEFAULT_REDIRECT = '/'
 
 // Where to come back to after signing in. Two spellings exist in the wild:
 // the interview lab's server guards send `?redirect=`, while every js-motion

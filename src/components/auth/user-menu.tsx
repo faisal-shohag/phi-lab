@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { History, LogOut, Loader2, ShieldCheck, UserRound } from 'lucide-react'
 import { authClient } from '@/lib/auth-client'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -67,6 +67,7 @@ interface UserMenuProps {
 
 export function UserMenu({ showHistory = true }: UserMenuProps) {
   const router = useRouter()
+  const pathname = usePathname()
   const { data: session, isPending } = authClient.useSession()
   const [signingOut, setSigningOut] = useState(false)
   // Called before the early returns below — hooks cannot be conditional.
@@ -80,7 +81,9 @@ export function UserMenu({ showHistory = true }: UserMenuProps) {
   if (!user) {
     return (
       <Button asChild size="sm" variant="outline">
-        <Link href="/sign-in">Sign in</Link>
+        {/* Carry the current page so sign-in (email or social) returns here
+            instead of falling through to the interview-lab default. */}
+        <Link href={`/sign-in?next=${encodeURIComponent(pathname)}`}>Sign in</Link>
       </Button>
     )
   }
