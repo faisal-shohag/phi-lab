@@ -54,9 +54,26 @@ export interface LeaderboardSheetProps {
   endpoint: string
   /** Shown when the board is empty. Name what earns XP *in this lab* — "solve a problem" is no help in Pixel Lab. */
   emptyMessage: string
+  /** Header title. Defaults to the weekly-XP framing. */
+  title?: string
+  /** Unit shown after the caller's own score in the footer. Defaults to "XP". */
+  unit?: string
+  /** Footer label for the caller's rank. Defaults to "Your rank this week". */
+  youLabel?: string
+  /** Footer text when the caller is unranked. */
+  emptyYouMessage?: string
 }
 
-export function LeaderboardSheet({ open, onOpenChange, endpoint, emptyMessage }: LeaderboardSheetProps) {
+export function LeaderboardSheet({
+  open,
+  onOpenChange,
+  endpoint,
+  emptyMessage,
+  title = 'Weekly ranks',
+  unit = 'XP',
+  youLabel = 'Your rank this week',
+  emptyYouMessage = 'Earn some XP this week to claim your spot.',
+}: LeaderboardSheetProps) {
   const [data, setData] = useState<Data | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -90,7 +107,7 @@ export function LeaderboardSheet({ open, onOpenChange, endpoint, emptyMessage }:
         <SheetHeader className="border-b border-rose-500/30 bg-background/40 p-4">
           <SheetTitle className="flex items-center gap-2 text-base font-black uppercase tracking-wide text-rose-700 dark:text-rose-300">
             <Flame className="h-5 w-5 fill-current text-orange-500" />
-            Weekly ranks
+            {title}
             {/* The period the board covers. Fetched since day one and never
                 rendered — a leaderboard with no date on it can't be read. */}
             {data?.week && (
@@ -196,18 +213,18 @@ export function LeaderboardSheet({ open, onOpenChange, endpoint, emptyMessage }:
         <SheetFooter className="border-t border-rose-500/30 bg-background/40 p-4">
           {data?.you.rank ? (
             <div className="flex items-center justify-between gap-2">
-              <span className="text-xs text-muted-foreground">Your rank this week</span>
+              <span className="text-xs text-muted-foreground">{youLabel}</span>
               <span className="flex items-center gap-2">
                 <span className={cn('font-mono text-sm font-black tabular-nums', rankHeat(data.you.rank))}>
                   #{data.you.rank}
                 </span>
                 <span className="font-mono text-sm font-black tabular-nums text-emerald-600 dark:text-emerald-400">
-                  {data.you.xp} XP
+                  {data.you.xp} {unit}
                 </span>
               </span>
             </div>
           ) : (
-            <p className="text-center text-xs text-muted-foreground">Earn some XP this week to claim your spot.</p>
+            <p className="text-center text-xs text-muted-foreground">{emptyYouMessage}</p>
           )}
         </SheetFooter>
       </SheetContent>
