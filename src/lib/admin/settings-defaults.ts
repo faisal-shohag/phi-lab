@@ -17,6 +17,7 @@ export const SETTING_DEFAULTS = {
   'lab.feynman.dailyLimit': 10,
   'lab.english.dailyLimit': 10,
   'lab.analogies.dailyLimit': 40,
+  'lab.quiz.dailyLimit': 20,
 
   // Platform-wide concurrent live Support slots; everyone else queues.
   'lab.support.maxActiveSessions': 3,
@@ -29,6 +30,7 @@ export const SETTING_DEFAULTS = {
   'flag.lab.english.enabled': true,
   'flag.lab.support.enabled': true,
   'flag.lab.analogies.enabled': true,
+  'flag.lab.quiz.enabled': true,
 
   // Park switches. A parked provider is skipped in the Hive failover chain.
   'flag.provider.gemini.parked': false,
@@ -54,6 +56,7 @@ export const SETTING_BOUNDS: Partial<Record<SettingKey, { min: number; max: numb
   'lab.feynman.dailyLimit': { min: 0, max: 500 },
   'lab.english.dailyLimit': { min: 0, max: 500 },
   'lab.analogies.dailyLimit': { min: 0, max: 500 },
+  'lab.quiz.dailyLimit': { min: 0, max: 500 },
   'lab.support.maxActiveSessions': { min: 0, max: 50 },
   'hive.dailyCoachLimit': { min: 0, max: 500 },
 }

@@ -56,6 +56,7 @@ model User {
   feynman           FeynmanSession[]
   english           EnglishSession[]
   analogies         AnalogyCard[]
+  quizSessions      QuizSession[]
   support           SupportSession[]
   xpEvents          XpEvent[]
   badges            UserBadge[]
@@ -279,6 +280,29 @@ model AnalogyCard {
 
   @@index([userId, createdAt])
   @@map("analogy_card")
+}
+
+// Quiz Generator: AI-generated multiple-choice quizzes. The questions are stored
+// so the user can review after submission without re-generating. Answers and
+// score are null until submitted.
+model QuizSession {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topics        String[] // e.g. ["javascript", "react"]
+  difficulty    String   @default("beginner") // "beginner" | "intermediate" | "advanced"
+  questionCount Int      @default(10)
+  questions     Json     @default("[]") // AI-generated MCQ data
+  answers       Json?    // User's answers (null until submitted)
+  score         Int?     // Correct count (null until submitted)
+  total         Int      @default(0) // Total questions
+  xpAwarded     Int      @default(0)
+  status        String   @default("in_progress") // "in_progress" | "completed"
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@map("quiz_session")
 }
 
 // Support Session lab: a live voice call with an AI supporter about anything —
@@ -648,6 +672,10 @@ enum AiFeature {
    * The Path: weekly re-plan + report card.
    */
   PATH
+  /**
+   * Quiz Generator: AI-generated multiple-choice quizzes.
+   */
+  QUIZ
 }
 
 /**
@@ -680,6 +708,10 @@ enum AiTask {
    * The Path: re-plan the coming week and write the report card.
    */
   PLAN
+  /**
+   * Quiz Generator: generate MCQ questions.
+   */
+  GENERATE_QUIZ
 }
 
 /**
