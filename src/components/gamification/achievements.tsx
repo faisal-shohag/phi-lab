@@ -8,6 +8,7 @@ import {
   Presentation, Lightbulb, Languages, MessageCircle, Palette, LifeBuoy, Lock,
   CalendarCheck, GitBranch, Lasso, Timer, Boxes,
   ArrowDownWideNarrow, Swords, Shield, Bug, BugOff,
+  Code2, Braces, Terminal, Cpu,
   type LucideIcon,
 } from 'lucide-react'
 import { BADGES, type BadgeStats } from '@/lib/gamification/badges'
@@ -17,6 +18,7 @@ import { cn } from '@/lib/utils'
 const ICONS: Record<string, LucideIcon> = {
   Sparkles, Rocket, GraduationCap, Mic, Trophy, Flame, Target, Zap, Crown, Snowflake, Presentation, Lightbulb, Languages, MessageCircle, Palette, LifeBuoy,
   CalendarCheck, GitBranch, Lasso, Timer, Boxes, ArrowDownWideNarrow, Swords, Shield, Bug, BugOff,
+  Code2, Braces, Terminal, Cpu,
 }
 
 interface AchievementsProps {

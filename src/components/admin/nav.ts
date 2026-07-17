@@ -8,6 +8,7 @@ import {
   Users,
   Hexagon,
   FlaskConical,
+  Code2,
   SlidersHorizontal,
   ScrollText,
   type LucideIcon,
@@ -38,6 +39,12 @@ export const ADMIN_NAV: NavItem[] = [
     href: '/admin/labs',
     icon: FlaskConical,
     description: 'Session usage and what is running now',
+  },
+  {
+    title: 'Code Lab',
+    href: '/admin/code-lab',
+    icon: Code2,
+    description: 'Author problems and generate with AI',
   },
   {
     title: 'Users',

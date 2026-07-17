@@ -9,6 +9,8 @@ import { levelInfo } from '@/lib/gamification/levels'
 import { ProfileHero } from '@/components/profile/profile-hero'
 import { CareerCard } from '@/components/profile/career-card'
 import { BadgeShowcase } from '@/components/profile/badge-showcase'
+import { CodeLabSection } from '@/components/profile/code-lab-section'
+import { getCodeLabProfileStats } from '@/lib/code-lab/queries'
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
 import { Logo } from '@/components/brand/logo'
 import { Button } from '@/components/ui/button'
@@ -45,7 +47,11 @@ export default async function PublicProfilePage(
   const user = await loadPublicUser(id)
   if (!user) notFound()
 
-  const [profile, info] = await Promise.all([getProfile(user.id), getProfileInfo(user.id)])
+  const [profile, info, codeLab] = await Promise.all([
+    getProfile(user.id),
+    getProfileInfo(user.id),
+    getCodeLabProfileStats(user.id),
+  ])
   const level = levelInfo(profile.xp)
 
   return (
@@ -78,6 +84,8 @@ export default async function PublicProfilePage(
         <CareerCard info={info} />
 
         <BadgeShowcase badgeIds={profile.badgeIds} />
+
+        <CodeLabSection stats={codeLab} isOwner={false} />
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <PublicStat label="Total XP" value={profile.xp} />
