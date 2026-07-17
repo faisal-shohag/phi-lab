@@ -79,13 +79,18 @@ button { background: none; border: none; }
 a { color: inherit; text-decoration: none; }
 /* The scored area. The renderer screenshots exactly this element, so what comes
    out is always the challenge's canvas size — which is what makes the diff
-   comparable to a reference of the same dimensions. */
+   comparable to a reference of the same dimensions.
+
+   No background of its own, deliberately: the screenshot composites whatever is
+   behind a transparent element, the viewport is exactly canvas-sized on both
+   sides, and body already paints white — so \`body { background: ... }\`, the
+   selector everyone reaches for first, colours the canvas like it would on any
+   normal page. Give #canvas its own background and that stops being true. */
 #canvas {
   width: ${canvas.width}px;
   height: ${canvas.height}px;
   overflow: hidden;
   position: relative;
-  background: #ffffff;
   flex: none;
 }
 `.trim()
