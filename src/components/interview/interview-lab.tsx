@@ -1,22 +1,22 @@
-'use client'
+"use client";
 
-import Link from 'next/link'
-import { AnimatePresence, motion } from 'framer-motion'
-import { Loader2, AlertCircle, History } from 'lucide-react'
-import { useInterview } from '@/lib/interview/use-interview'
-import { SetupScreen } from '@/components/interview/setup-screen'
-import { GreenRoom } from '@/components/interview/green-room'
-import { LiveScreen } from '@/components/interview/live-screen'
-import { ReportScreen } from '@/components/interview/report-screen'
-import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
-import { Button } from '@/components/ui/button'
-import { UserMenu } from '@/components/auth/user-menu'
-import { XpBadge } from '@/components/gamification/xp-badge'
-import { Logo } from '@/components/brand/logo'
-import { resolveErrorCopy } from '@/lib/interview/errors'
+import Link from "next/link";
+import { AnimatePresence, motion } from "framer-motion";
+import { Loader2, AlertCircle, History, ArrowLeft } from "lucide-react";
+import { useInterview } from "@/lib/interview/use-interview";
+import { SetupScreen } from "@/components/interview/setup-screen";
+import { GreenRoom } from "@/components/interview/green-room";
+import { LiveScreen } from "@/components/interview/live-screen";
+import { ReportScreen } from "@/components/interview/report-screen";
+import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
+import { Button } from "@/components/ui/button";
+import { UserMenu } from "@/components/auth/user-menu";
+import { XpBadge } from "@/components/gamification/xp-badge";
+import { Logo } from "@/components/brand/logo";
+import { resolveErrorCopy } from "@/lib/interview/errors";
 
 export function InterviewLab({ userName }: { userName?: string }) {
-  const iv = useInterview()
+  const iv = useInterview();
 
   return (
     <div className="min-h-screen bg-linear-to-br from-zinc-50 via-white to-zinc-100 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-950">
@@ -25,9 +25,17 @@ export function InterviewLab({ userName }: { userName?: string }) {
           <Logo className="h-8 w-8" />
           <div>
             <h1 className="text-sm font-bold leading-tight">Interview Lab</h1>
-            <p className="text-[11px] leading-tight text-muted-foreground">AI live technical interview</p>
+            <p className="text-[11px] leading-tight text-muted-foreground">
+              AI live technical interview
+            </p>
           </div>
           <div className="ml-auto flex items-center gap-2">
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/#labs">
+                <ArrowLeft className="h-4 w-4" />
+                <span className="hidden sm:inline">Labs</span>
+              </Link>
+            </Button>
             <Button asChild variant="ghost" size="sm">
               <Link href="/labs/interview/history">
                 <History className="h-4 w-4" />
@@ -56,14 +64,24 @@ export function InterviewLab({ userName }: { userName?: string }) {
         />
 
         <AnimatePresence mode="wait">
-          {iv.phase === 'idle' && (
-            <motion.div key="setup" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          {iv.phase === "idle" && (
+            <motion.div
+              key="setup"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
               <SetupScreen onContinue={iv.enterGreenRoom} greeting={userName} />
             </motion.div>
           )}
 
-          {iv.phase === 'greenroom' && (
-            <motion.div key="greenroom" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          {iv.phase === "greenroom" && (
+            <motion.div
+              key="greenroom"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
               <GreenRoom
                 topic={iv.topic}
                 level={iv.level}
@@ -75,8 +93,15 @@ export function InterviewLab({ userName }: { userName?: string }) {
             </motion.div>
           )}
 
-          {(iv.phase === 'connecting' || iv.phase === 'live' || iv.phase === 'reconnecting') && (
-            <motion.div key="live" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          {(iv.phase === "connecting" ||
+            iv.phase === "live" ||
+            iv.phase === "reconnecting") && (
+            <motion.div
+              key="live"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
               <LiveScreen
                 topic={iv.topic}
                 level={iv.level}
@@ -87,15 +112,15 @@ export function InterviewLab({ userName }: { userName?: string }) {
                 modelSpeaking={iv.modelSpeaking}
                 micAnalyser={iv.micAnalyser}
                 outputAnalyser={iv.outputAnalyser}
-                connecting={iv.phase === 'connecting'}
-                reconnecting={iv.phase === 'reconnecting'}
+                connecting={iv.phase === "connecting"}
+                reconnecting={iv.phase === "reconnecting"}
                 onMute={iv.toggleMute}
                 onEnd={iv.endEarly}
               />
             </motion.div>
           )}
 
-          {iv.phase === 'generating' && (
+          {iv.phase === "generating" && (
             <motion.div
               key="generating"
               initial={{ opacity: 0 }}
@@ -106,26 +131,34 @@ export function InterviewLab({ userName }: { userName?: string }) {
               <Loader2 className="h-10 w-10 animate-spin text-amber-500" />
               <div>
                 <p className="text-lg font-semibold">Scoring your interview…</p>
-                <p className="text-sm text-muted-foreground">Reviewing the transcript and writing your report.</p>
+                <p className="text-sm text-muted-foreground">
+                  Reviewing the transcript and writing your report.
+                </p>
               </div>
             </motion.div>
           )}
 
-          {iv.phase === 'report' && iv.report && (
-            <motion.div key="report" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          {iv.phase === "report" && iv.report && (
+            <motion.div
+              key="report"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
               <ReportScreen
                 report={iv.report}
                 topic={iv.topic}
                 level={iv.level}
                 onNew={iv.reset}
                 onRetry={() => {
-                  if (iv.topic && iv.level) iv.enterGreenRoom(iv.topic, iv.level, iv.pressure)
+                  if (iv.topic && iv.level)
+                    iv.enterGreenRoom(iv.topic, iv.level, iv.pressure);
                 }}
               />
             </motion.div>
           )}
 
-          {iv.phase === 'error' && (
+          {iv.phase === "error" && (
             <motion.div
               key="error"
               initial={{ opacity: 0 }}
@@ -137,14 +170,23 @@ export function InterviewLab({ userName }: { userName?: string }) {
                 <AlertCircle className="h-6 w-6 text-rose-500" />
               </div>
               <div className="max-w-md">
-                <p className="text-lg font-semibold">{resolveErrorCopy(iv.errorCode).title}</p>
-                <p className="mt-1 text-sm text-muted-foreground">{iv.error ?? resolveErrorCopy(iv.errorCode).message}</p>
+                <p className="text-lg font-semibold">
+                  {resolveErrorCopy(iv.errorCode).title}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {iv.error ?? resolveErrorCopy(iv.errorCode).message}
+                </p>
               </div>
               <div className="flex items-center gap-2">
-                {iv.errorCode === 'REPORT_FAILED' && iv.canRetryReport && (
+                {iv.errorCode === "REPORT_FAILED" && iv.canRetryReport && (
                   <Button onClick={iv.retryReport}>Try scoring again</Button>
                 )}
-                <Button variant={iv.errorCode === 'REPORT_FAILED' ? 'outline' : 'default'} onClick={iv.reset}>
+                <Button
+                  variant={
+                    iv.errorCode === "REPORT_FAILED" ? "outline" : "default"
+                  }
+                  onClick={iv.reset}
+                >
                   Back to start
                 </Button>
               </div>
@@ -153,5 +195,5 @@ export function InterviewLab({ userName }: { userName?: string }) {
         </AnimatePresence>
       </main>
     </div>
-  )
+  );
 }

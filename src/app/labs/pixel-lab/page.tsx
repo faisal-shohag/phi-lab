@@ -1,97 +1,127 @@
-'use client'
+"use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import Link from 'next/link'
-import confetti from 'canvas-confetti'
-import { ChevronUp, Clock, Code2, Grid2x2Check, Loader2, Lock, Map as MapIcon, Play, Target, Trophy } from 'lucide-react'
-import { toast } from 'sonner'
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import confetti from "canvas-confetti";
+import {
+  ArrowLeft,
+  ChevronUp,
+  Clock,
+  Code2,
+  Grid2x2Check,
+  Loader2,
+  Lock,
+  Map as MapIcon,
+  Play,
+  Target,
+  Trophy,
+} from "lucide-react";
+import { toast } from "sonner";
 
-import { UserMenu } from '@/components/auth/user-menu'
-import { LeaderboardSheet } from '@/components/gamification/leaderboard-sheet'
-import { XpBadge } from '@/components/gamification/xp-badge'
-import { XpHint } from '@/components/gamification/xp-hint'
-import { BriefScroll } from '@/components/pixel/brief-scroll'
-import { ChallengeMap } from '@/components/pixel/challenge-map'
-import { CompareStage } from '@/components/pixel/compare-stage'
-import { HistorySheet, type Submission } from '@/components/pixel/history-sheet'
-import { MiniMap } from '@/components/pixel/mini-map'
-import { PixelEditor, type PixelLang } from '@/components/pixel/pixel-editor'
-import { ScorePanel, type ScoreResult } from '@/components/pixel/score-panel'
-import { SettingsMenu, usePixelSettings } from '@/components/pixel/settings-menu'
-import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
-import { Button } from '@/components/ui/button'
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { authClient } from '@/lib/auth-client'
-import { refreshXp } from '@/lib/gamification/use-xp'
-import { PIXEL_TOPICS, type PixelChallenge } from '@/lib/pixel/challenges'
-import { loadDraft, saveDraft } from '@/lib/pixel/drafts'
-import type { FrameSource } from '@/lib/pixel/harness'
-import { TIER_LABEL, type Tier } from '@/lib/pixel/score'
-import { getSettings } from '@/lib/pixel/settings'
-import { playSound, preloadSounds } from '@/lib/pixel/sound'
+import { UserMenu } from "@/components/auth/user-menu";
+import { LeaderboardSheet } from "@/components/gamification/leaderboard-sheet";
+import { XpBadge } from "@/components/gamification/xp-badge";
+import { XpHint } from "@/components/gamification/xp-hint";
+import { BriefScroll } from "@/components/pixel/brief-scroll";
+import { ChallengeMap } from "@/components/pixel/challenge-map";
+import { CompareStage } from "@/components/pixel/compare-stage";
+import {
+  HistorySheet,
+  type Submission,
+} from "@/components/pixel/history-sheet";
+import { MiniMap } from "@/components/pixel/mini-map";
+import { PixelEditor, type PixelLang } from "@/components/pixel/pixel-editor";
+import { ScorePanel, type ScoreResult } from "@/components/pixel/score-panel";
+import {
+  SettingsMenu,
+  usePixelSettings,
+} from "@/components/pixel/settings-menu";
+import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
+import { Button } from "@/components/ui/button";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { authClient } from "@/lib/auth-client";
+import { refreshXp } from "@/lib/gamification/use-xp";
+import { PIXEL_TOPICS, type PixelChallenge } from "@/lib/pixel/challenges";
+import { loadDraft, saveDraft } from "@/lib/pixel/drafts";
+import type { FrameSource } from "@/lib/pixel/harness";
+import { TIER_LABEL, type Tier } from "@/lib/pixel/score";
+import { getSettings } from "@/lib/pixel/settings";
+import { playSound, preloadSounds } from "@/lib/pixel/sound";
 import {
   crossedMilestone,
   nextChallengeId,
   unlockStates,
   type TiersByChallenge,
-} from '@/lib/pixel/unlock'
-import { cn } from '@/lib/utils'
+} from "@/lib/pixel/unlock";
+import { cn } from "@/lib/utils";
 
-const ALL = PIXEL_TOPICS.flatMap((t) => t.challenges)
-const FIRST = ALL[0]
+const ALL = PIXEL_TOPICS.flatMap((t) => t.challenges);
+const FIRST = ALL[0];
 
 export default function PixelLabPage() {
-  const { data: session, isPending: sessionPending } = authClient.useSession()
-  const signedIn = Boolean(session?.user)
+  const { data: session, isPending: sessionPending } = authClient.useSession();
+  const signedIn = Boolean(session?.user);
 
-  const [challenge, setChallenge] = useState<PixelChallenge>(FIRST)
-  const [html, setHtml] = useState(FIRST.starterHtml)
-  const [css, setCss] = useState(FIRST.starterCss)
-  const [lang, setLang] = useState<PixelLang>('css')
+  const [challenge, setChallenge] = useState<PixelChallenge>(FIRST);
+  const [html, setHtml] = useState(FIRST.starterHtml);
+  const [css, setCss] = useState(FIRST.starterCss);
+  const [lang, setLang] = useState<PixelLang>("css");
 
-  const [result, setResult] = useState<ScoreResult | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [pending, setPending] = useState(false)
-  const [leaderboardOpen, setLeaderboardOpen] = useState(false)
-  const [tiersByChallenge, setTiersByChallenge] = useState<TiersByChallenge>({})
+  const [result, setResult] = useState<ScoreResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false);
+  const [tiersByChallenge, setTiersByChallenge] = useState<TiersByChallenge>(
+    {},
+  );
 
-  const settings = usePixelSettings()
+  const settings = usePixelSettings();
 
   // The board is the home, and it opens on landing — unless the learner has said
   // otherwise. Read once, not reactively: flipping the setting mid-session
   // should change the *next* visit, not throw the map over the work you are
   // doing right now.
-  const [mapOpen, setMapOpen] = useState(() => getSettings().mapOnLand)
-  const [historyOpen, setHistoryOpen] = useState(false)
-  const [scoreOpen, setScoreOpen] = useState(false)
-  const [justOpened, setJustOpened] = useState<string[]>([])
-  const [progressLoaded, setProgressLoaded] = useState(false)
+  const [mapOpen, setMapOpen] = useState(() => getSettings().mapOnLand);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [scoreOpen, setScoreOpen] = useState(false);
+  const [justOpened, setJustOpened] = useState<string[]>([]);
+  const [progressLoaded, setProgressLoaded] = useState(false);
   // Whether the once-per-visit jump to the learner's current challenge has run.
-  const landedRef = useRef(false)
+  const landedRef = useRef(false);
 
-  const source = useMemo<FrameSource>(() => ({ html, css }), [html, css])
-  const states = useMemo(() => unlockStates(tiersByChallenge), [tiersByChallenge])
-  const nextId = useMemo(() => nextChallengeId(tiersByChallenge), [tiersByChallenge])
+  const source = useMemo<FrameSource>(() => ({ html, css }), [html, css]);
+  const states = useMemo(
+    () => unlockStates(tiersByChallenge),
+    [tiersByChallenge],
+  );
+  const nextId = useMemo(
+    () => nextChallengeId(tiersByChallenge),
+    [tiersByChallenge],
+  );
 
   useEffect(() => {
-    preloadSounds()
-  }, [])
+    preloadSounds();
+  }, []);
 
   const loadProgress = useCallback(async (): Promise<TiersByChallenge> => {
-    const res = await fetch('/api/labs/pixel-lab/challenges/progress')
+    const res = await fetch("/api/labs/pixel-lab/challenges/progress");
     // A guest gets a 401 here, which is not an error — it is a learner who has
     // done nothing yet, and unlockStates({}) already says "only the first one".
     if (!res.ok) {
-      setProgressLoaded(true)
-      return {}
+      setProgressLoaded(true);
+      return {};
     }
-    const data = await res.json()
-    const tiers: TiersByChallenge = data.tiersByChallenge ?? {}
-    setTiersByChallenge(tiers)
-    setProgressLoaded(true)
-    return tiers
-  }, [])
+    const data = await res.json();
+    const tiers: TiersByChallenge = data.tiersByChallenge ?? {};
+    setTiersByChallenge(tiers);
+    setProgressLoaded(true);
+    return tiers;
+  }, []);
 
   /**
    * The board must not open before we know what is on it.
@@ -102,57 +132,62 @@ export default function PixelLabPage() {
    * a correction dressed as a celebration. Waiting costs a few hundred
    * milliseconds and means the first thing they see is true.
    */
-  const boardReady = signedIn ? progressLoaded : !sessionPending
+  const boardReady = signedIn ? progressLoaded : !sessionPending;
 
   useEffect(() => {
-    if (!signedIn) return
+    if (!signedIn) return;
     /* eslint-disable react-hooks/set-state-in-effect */
     void loadProgress().then((tiers) => {
       // Land the returning learner where they actually are, not on challenge
       // one every time. Once, on the first progress load only — after that the
       // map is the navigator and this must never yank a challenge they chose.
-      if (landedRef.current) return
-      landedRef.current = true
-      const id = nextChallengeId(tiers)
+      if (landedRef.current) return;
+      landedRef.current = true;
+      const id = nextChallengeId(tiers);
       // Everything cleared: null next, so stand on the final challenge.
-      const here = (id ? ALL.find((c) => c.id === id) : ALL[ALL.length - 1]) ?? FIRST
-      if (here.id === FIRST.id) return
-      setChallenge(here)
-      const draft = loadDraft(here.id)
-      setHtml(draft?.html ?? here.starterHtml)
-      setCss(draft?.css ?? here.starterCss)
-    })
+      const here =
+        (id ? ALL.find((c) => c.id === id) : ALL[ALL.length - 1]) ?? FIRST;
+      if (here.id === FIRST.id) return;
+      setChallenge(here);
+      const draft = loadDraft(here.id);
+      setHtml(draft?.html ?? here.starterHtml);
+      setCss(draft?.css ?? here.starterCss);
+    });
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [loadProgress, signedIn])
+  }, [loadProgress, signedIn]);
 
   const celebrate = useCallback(() => {
-    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
-    confetti({ particleCount: 90, spread: 70, origin: { y: 0.6 } })
-  }, [])
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    )
+      return;
+    confetti({ particleCount: 90, spread: 70, origin: { y: 0.6 } });
+  }, []);
 
   const pick = useCallback((next: PixelChallenge) => {
-    setChallenge(next)
+    setChallenge(next);
     // Their unfinished work, if any — the starter is only for a challenge they
     // have never opened. Switching away and back used to reset you to scratch.
-    const draft = loadDraft(next.id)
-    setHtml(draft?.html ?? next.starterHtml)
-    setCss(draft?.css ?? next.starterCss)
-    setResult(null)
-    setError(null)
-    setLang('css')
-    setMapOpen(false)
-  }, [])
+    const draft = loadDraft(next.id);
+    setHtml(draft?.html ?? next.starterHtml);
+    setCss(draft?.css ?? next.starterCss);
+    setResult(null);
+    setError(null);
+    setLang("css");
+    setMapOpen(false);
+  }, []);
 
   // Restore the draft for whatever challenge we land on, once, on mount. `pick`
   // covers every later switch.
   useEffect(() => {
-    const draft = loadDraft(FIRST.id)
-    if (!draft) return
+    const draft = loadDraft(FIRST.id);
+    if (!draft) return;
     /* eslint-disable react-hooks/set-state-in-effect */
-    setHtml(draft.html)
-    setCss(draft.css)
+    setHtml(draft.html);
+    setCss(draft.css);
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [])
+  }, []);
 
   /**
    * Keep the draft, debounced.
@@ -163,74 +198,83 @@ export default function PixelLabPage() {
    * indistinguishable to them and costs one write per pause.
    */
   useEffect(() => {
-    const t = window.setTimeout(() => saveDraft(challenge.id, { html, css }), 400)
-    return () => window.clearTimeout(t)
-  }, [challenge.id, html, css])
+    const t = window.setTimeout(
+      () => saveDraft(challenge.id, { html, css }),
+      400,
+    );
+    return () => window.clearTimeout(t);
+  }, [challenge.id, html, css]);
 
   const restore = useCallback((s: Submission) => {
-    setHtml(s.html)
-    setCss(s.css)
-    setResult(null)
-    setError(null)
-    toast.success('Loaded that attempt into the editor')
-  }, [])
+    setHtml(s.html);
+    setCss(s.css);
+    setResult(null);
+    setError(null);
+    toast.success("Loaded that attempt into the editor");
+  }, []);
 
-  const locked = states[challenge.id] === 'locked'
+  const locked = states[challenge.id] === "locked";
 
   async function score() {
-    setPending(true)
-    setError(null)
+    setPending(true);
+    setError(null);
     // The panel earns its space the moment there is a score coming.
-    setScoreOpen(true)
+    setScoreOpen(true);
 
     try {
       // No capture, no image: the server renders this code itself. That is what
       // makes the number it sends back worth anything.
-      const res = await fetch('/api/labs/pixel-lab/challenges/complete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/labs/pixel-lab/challenges/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ challengeId: challenge.id, html, css }),
-      })
-      const body = await res.json()
+      });
+      const body = await res.json();
       if (!res.ok) {
-        const message = body.message ?? 'Could not score your build.'
-        setError(message)
-        toast.error(message)
-        return
+        const message = body.message ?? "Could not score your build.";
+        setError(message);
+        toast.error(message);
+        return;
       }
 
-      setResult(body as ScoreResult)
-      const fresh: Tier[] = body.freshTiers ?? []
-      const opened: string[] = body.opened ?? []
+      setResult(body as ScoreResult);
+      const fresh: Tier[] = body.freshTiers ?? [];
+      const opened: string[] = body.opened ?? [];
 
       if (fresh.length > 0) {
-        playSound('score')
-        void loadProgress()
-        refreshXp()
-        celebrate()
-        toast.success(`${TIER_LABEL[fresh[fresh.length - 1]]} — +${body.xpGained} XP`)
+        playSound("score");
+        void loadProgress();
+        refreshXp();
+        celebrate();
+        toast.success(
+          `${TIER_LABEL[fresh[fresh.length - 1]]} — +${body.xpGained} XP`,
+        );
       }
 
       if (opened.length > 0) {
         // Show them the board doing the thing they just earned. The delay lets
         // the score land first — two celebrations at once is one celebration.
-        setJustOpened(opened)
-        const milestone = crossedMilestone(opened)
+        setJustOpened(opened);
+        const milestone = crossedMilestone(opened);
         window.setTimeout(() => {
-          setMapOpen(true)
-          playSound('unlock', milestone ? 0.85 : 0.55)
+          setMapOpen(true);
+          playSound("unlock", milestone ? 0.85 : 0.55);
           if (milestone) {
-            const topic = PIXEL_TOPICS.find((t) => t.id === milestone)
-            if (topic) toast.success(`${topic.title} unlocked`, { description: topic.blurb })
+            const topic = PIXEL_TOPICS.find((t) => t.id === milestone);
+            if (topic)
+              toast.success(`${topic.title} unlocked`, {
+                description: topic.blurb,
+              });
           }
-        }, 900)
+        }, 900);
       }
     } catch {
-      const message = 'Could not reach the server. Check your connection and try again.'
-      setError(message)
-      toast.error(message)
+      const message =
+        "Could not reach the server. Check your connection and try again.";
+      setError(message);
+      toast.error(message);
     } finally {
-      setPending(false)
+      setPending(false);
     }
   }
 
@@ -245,8 +289,8 @@ export default function PixelLabPage() {
       <ChallengeMap
         open={mapOpen && boardReady}
         onOpenChange={(v) => {
-          setMapOpen(v)
-          if (!v) setJustOpened([])
+          setMapOpen(v);
+          if (!v) setJustOpened([]);
         }}
         tiers={tiersByChallenge}
         currentId={challenge.id}
@@ -271,13 +315,21 @@ export default function PixelLabPage() {
             </div>
             <div>
               <h1 className="text-lg font-bold leading-tight">Pixel Lab</h1>
-              <p className="text-xs leading-tight text-muted-foreground">Match the target. Pixel for pixel.</p>
+              <p className="text-xs leading-tight text-muted-foreground">
+                Match the target. Pixel for pixel.
+              </p>
             </div>
           </div>
 
           <div className="ml-auto flex items-center gap-2">
             {/* Sound moved in here. A speaker button beside a settings menu that
                 also owns sound is two switches for one preference. */}
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/#labs">
+                <ArrowLeft className="h-4 w-4" />
+                <span className="hidden sm:inline">Labs</span>
+              </Link>
+            </Button>
             <SettingsMenu />
             <AnimatedThemeToggler />
             {signedIn && (
@@ -286,7 +338,12 @@ export default function PixelLabPage() {
                 <XpBadge />
               </>
             )}
-            <Button variant="outline" size="sm" onClick={() => setMapOpen(true)} title="The run">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setMapOpen(true)}
+              title="The run"
+            >
               <MapIcon className="h-4 w-4 text-pink-500 sm:mr-1" />
               <span className="hidden md:inline">Map</span>
             </Button>
@@ -330,10 +387,16 @@ export default function PixelLabPage() {
               className="bg-linear-to-r from-pink-500 to-red-500"
               onClick={score}
               disabled={pending || !signedIn || locked}
-              title={locked ? 'Clear the challenge before this one first' : undefined}
+              title={
+                locked ? "Clear the challenge before this one first" : undefined
+              }
             >
-              {pending ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Play className="mr-1 h-4 w-4" />}
-              {pending ? 'Scoring…' : 'Score'}
+              {pending ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : (
+                <Play className="mr-1 h-4 w-4" />
+              )}
+              {pending ? "Scoring…" : "Score"}
             </Button>
             <UserMenu />
           </div>
@@ -363,7 +426,7 @@ export default function PixelLabPage() {
           key={challenge.id}
           challengeTitle={challenge.title}
           brief={challenge.brief}
-          isSpec={challenge.kind === 'brief'}
+          isSpec={challenge.kind === "brief"}
         />
         <ResizablePanelGroup orientation="horizontal" className="h-full gap-3">
           {/* Editor */}
@@ -376,7 +439,8 @@ export default function PixelLabPage() {
                     {challenge.title}
                   </span>
                   <span className="shrink-0 font-mono text-[10px] text-muted-foreground tabular-nums">
-                    {challenge.canvas.width}×{challenge.canvas.height} · {challenge.estimate} min
+                    {challenge.canvas.width}×{challenge.canvas.height} ·{" "}
+                    {challenge.estimate} min
                   </span>
                 </div>
                 {/* The brief itself is on the scroll at the bottom. It used to be
@@ -399,7 +463,8 @@ export default function PixelLabPage() {
                     </TabsTrigger>
                   </TabsList>
                   <span className="text-[11px] text-muted-foreground">
-                    Emmet: type <code className="font-mono">div.box</code> and press Tab
+                    Emmet: type <code className="font-mono">div.box</code> and
+                    press Tab
                   </span>
                 </div>
                 {/* Both editors stay mounted: unmounting one would drop its undo history
@@ -409,20 +474,20 @@ export default function PixelLabPage() {
                     an editor grabbing the caret underneath it would both lose the
                     fight and break keyboard navigation of the map. */}
                 <div className="min-h-0 flex-1">
-                  <div className={cn('h-full', lang !== 'html' && 'hidden')}>
+                  <div className={cn("h-full", lang !== "html" && "hidden")}>
                     <PixelEditor
                       lang="html"
                       value={html}
                       onChange={setHtml}
-                      focused={lang === 'html' && !mapOpen}
+                      focused={lang === "html" && !mapOpen}
                     />
                   </div>
-                  <div className={cn('h-full', lang !== 'css' && 'hidden')}>
+                  <div className={cn("h-full", lang !== "css" && "hidden")}>
                     <PixelEditor
                       lang="css"
                       value={css}
                       onChange={setCss}
-                      focused={lang === 'css' && !mapOpen}
+                      focused={lang === "css" && !mapOpen}
                     />
                   </div>
                 </div>
@@ -440,14 +505,29 @@ export default function PixelLabPage() {
                 a learner actually wants at that moment is the one showing the
                 target. It opens itself the instant you press Score. */}
             {scoreOpen ? (
-              <ResizablePanelGroup orientation="vertical" className="h-full gap-3">
-                <ResizablePanel defaultSize={64} minSize={30} className="min-h-0">
+              <ResizablePanelGroup
+                orientation="vertical"
+                className="h-full gap-3"
+              >
+                <ResizablePanel
+                  defaultSize={64}
+                  minSize={30}
+                  className="min-h-0"
+                >
                   <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border-2 border-border bg-card shadow-sm">
-                    <CompareStage source={source} canvas={challenge.canvas} targetPng={challenge.targetPng} />
+                    <CompareStage
+                      source={source}
+                      canvas={challenge.canvas}
+                      targetPng={challenge.targetPng}
+                    />
                   </section>
                 </ResizablePanel>
                 <ResizableHandle withHandle />
-                <ResizablePanel defaultSize={36} minSize={20} className="min-h-0">
+                <ResizablePanel
+                  defaultSize={36}
+                  minSize={20}
+                  className="min-h-0"
+                >
                   <ScorePanel
                     result={result}
                     pending={pending}
@@ -459,7 +539,11 @@ export default function PixelLabPage() {
             ) : (
               <div className="flex h-full min-h-0 flex-col gap-3">
                 <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border-2 border-border bg-card shadow-sm">
-                  <CompareStage source={source} canvas={challenge.canvas} targetPng={challenge.targetPng} />
+                  <CompareStage
+                    source={source}
+                    canvas={challenge.canvas}
+                    targetPng={challenge.targetPng}
+                  />
                 </section>
                 {/* Collapsed, it is a bar you can open — not a thing that vanished. */}
                 <button
@@ -477,5 +561,5 @@ export default function PixelLabPage() {
         </ResizablePanelGroup>
       </main>
     </div>
-  )
+  );
 }
