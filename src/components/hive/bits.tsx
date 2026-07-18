@@ -21,7 +21,7 @@ export function timeAgo(iso: string): string {
   return `${d}d ago`
 }
 
-/** Human "expires in Xh" for the 3-day TTL. */
+/** Human "expires in Xh" for the 7-day TTL. */
 export function expiresIn(iso: string): string {
   const diff = new Date(iso).getTime() - Date.now()
   if (diff <= 0) return 'expiring soon'

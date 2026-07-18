@@ -4,7 +4,7 @@
 //     reliable path, and also rolls the weekly Queen Bee + posts the occasional
 //     encouragement.
 //
-// Unresolved QUESTIONs past their 3-day expiry are hard-deleted; cascades wipe
+// Unresolved QUESTIONs past their 7-day expiry are hard-deleted; cascades wipe
 // their replies/events/reactions/follows in one query. RESOLVED/ARCHIVED posts
 // and announcements/encouragement never match the filter, so knowledge survives
 // and noise doesn't.

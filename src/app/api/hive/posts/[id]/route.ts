@@ -2,7 +2,7 @@
 // is AI_WORKING to pick up the AI's answer.
 //
 // DELETE removes a post entirely (mentors/admins only) — moderation, not
-// housekeeping. The 3-day sweep handles the latter.
+// housekeeping. The 7-day sweep handles the latter.
 import { requireHiveUser, requireMentor, isMentor } from '@/lib/hive/roles'
 import { hiveError } from '@/lib/hive/errors'
 import { loadPostDetail, invalidatePost } from '@/lib/hive/detail'

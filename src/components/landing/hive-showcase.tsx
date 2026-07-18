@@ -25,7 +25,7 @@ const POINTS = [
   {
     icon: Hexagon,
     title: 'Answers become the Honeycomb',
-    body: 'Solved threads are distilled into a searchable knowledge base. Everything else expires in three days.',
+    body: 'Solved threads are distilled into a searchable knowledge base. Everything else expires in seven days.',
   },
 ]
 
