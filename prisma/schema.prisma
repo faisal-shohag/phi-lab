@@ -56,6 +56,7 @@ model User {
   feynman           FeynmanSession[]
   english           EnglishSession[]
   analogies         AnalogyCard[]
+  quizSessions      QuizSession[]
   support           SupportSession[]
   xpEvents          XpEvent[]
   badges            UserBadge[]
@@ -70,7 +71,6 @@ model User {
   pathProgress      PathProgress[]
   dailyQuests       DailyQuest[]
   weeklyPlans       WeeklyPlan[]
-  quizSessions      QuizSession[]
   codeSubmissions   CodeSubmission[]
   contests          Contest[]          @relation("ContestAuthor")
 

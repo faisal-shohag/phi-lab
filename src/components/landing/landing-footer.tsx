@@ -18,6 +18,7 @@ export function LandingFooter() {
         <div className="flex items-center gap-5 text-sm text-muted-foreground">
           <Link href="/labs/js-motion" className="hover:text-foreground">Js Motion Lab</Link>
           <Link href="/labs/interview" className="hover:text-foreground">Interview Lab</Link>
+          <Link href="/labs/quiz" className="hover:text-foreground">Quiz Lab</Link>
           <span>© {year} Phi Lab</span>
         </div>
       </div>
