@@ -81,7 +81,12 @@ export async function getProblemProgress(userId: string): Promise<ProblemProgres
     percent,
     topics,
     gateTopicComplete,
-    challengeUnlocked: percent >= CHALLENGE_GATE_PERCENT && gateTopicComplete,
+    // Gate opted OUT for now — Challenge is open to everyone while the pacing
+    // model is reworked. The real rule is kept below (commented) so turning it
+    // back on is a one-line revert; the inputs it needs (percent,
+    // gateTopicComplete, remainingForGate) are all still computed above.
+    // challengeUnlocked: percent >= CHALLENGE_GATE_PERCENT && gateTopicComplete,
+    challengeUnlocked: true,
     remainingForGate: Math.max(0, needed - completedIds.length),
   }
 }
