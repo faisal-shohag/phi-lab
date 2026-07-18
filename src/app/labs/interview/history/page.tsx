@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import type { Metadata } from 'next'
-import { ArrowLeft, ChevronRight } from 'lucide-react'
+import { ArrowLeft, ChevronRight, BookOpen } from 'lucide-react'
 import { requireUser } from '@/lib/auth-server'
 import { prisma } from '@/lib/prisma'
 import { topicById, levelById, languageById } from '@/lib/interview/topics'
@@ -76,6 +76,12 @@ export default async function InterviewHistoryPage() {
             <p className="text-[11px] leading-tight text-muted-foreground">Your past rounds & progress</p>
           </div>
           <div className="ml-auto flex items-center gap-2">
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/labs/interview/question-bank">
+                <BookOpen className="h-4 w-4" />
+                <span className="hidden sm:inline">Questions</span>
+              </Link>
+            </Button>
             <Button asChild variant="ghost" size="sm">
               <Link href="/labs/interview">
                 <ArrowLeft className="h-4 w-4" />

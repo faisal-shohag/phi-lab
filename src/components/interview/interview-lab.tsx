@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Loader2, AlertCircle, History } from 'lucide-react'
+import { Loader2, AlertCircle, History, BookOpen } from 'lucide-react'
 import { useInterview } from '@/lib/interview/use-interview'
 import { SetupScreen } from '@/components/interview/setup-screen'
 import { GreenRoom } from '@/components/interview/green-room'
@@ -28,6 +28,12 @@ export function InterviewLab({ userName }: { userName?: string }) {
             <p className="text-[11px] leading-tight text-muted-foreground">AI live technical interview</p>
           </div>
           <div className="ml-auto flex items-center gap-2">
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/labs/interview/question-bank">
+                <BookOpen className="h-4 w-4" />
+                <span className="hidden sm:inline">Questions</span>
+              </Link>
+            </Button>
             <Button asChild variant="ghost" size="sm">
               <Link href="/labs/interview/history">
                 <History className="h-4 w-4" />
