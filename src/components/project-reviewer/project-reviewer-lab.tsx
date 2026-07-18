@@ -279,6 +279,7 @@ export function ProjectReviewerLab({ userName }: { userName?: string }) {
       if (requestId !== requestIdRef.current) return;
       setResult(data);
     } catch (err) {
+      console.log("err ->>>", { err });
       if (requestId !== requestIdRef.current) return;
       setResult(null);
       setError(
