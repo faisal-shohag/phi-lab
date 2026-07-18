@@ -3,6 +3,7 @@
 import { motion } from 'framer-motion'
 import { Zap, TrendingUp, Layers, Mic2, Share2, Moon, Brain } from 'lucide-react'
 import { Reveal, RevealItem } from './reveal'
+import { SectionHeading } from './section-heading'
 import { cn } from '@/lib/utils'
 
 const FEATURES = [
@@ -18,17 +19,19 @@ const FEATURES = [
 export function Features() {
   return (
     <section id="features" className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
-      <Reveal className="text-center">
-        <h2 className="text-2xl font-bold sm:text-3xl">Built like a lab, not a lecture.</h2>
-      </Reveal>
+      <SectionHeading
+        eyebrow="Why Phi Lab"
+        title="Built like a lab, not a lecture."
+        subtitle="Our goal is simple: turn passive reading into active practice, and carry you from complete beginner to job-ready. Everything is voice-first where it matters, runs in the browser, and scales from easy to expert."
+      />
 
-      <Reveal stagger className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <Reveal stagger className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {FEATURES.map((f) => (
           <RevealItem key={f.title}>
             <motion.div
               whileHover={{ y: -3 }}
               transition={{ type: 'spring', stiffness: 300, damping: 22 }}
-              className="h-full rounded-xl border-2 border-border bg-card p-5 shadow-sm"
+              className="h-full rounded-2xl border border-border bg-card p-5 shadow-sm transition-colors hover:border-foreground/20"
             >
               <div className={cn('flex h-9 w-9 items-center justify-center rounded-lg', f.accent)}>
                 <f.icon className="h-4.5 w-4.5" />

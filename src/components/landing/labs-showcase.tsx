@@ -7,7 +7,52 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Reveal, RevealItem } from './reveal'
 import { useAmbientMotion } from './reveal'
+import { SectionHeading } from './section-heading'
 import { cn } from '@/lib/utils'
+
+// Per-accent styling: the icon-tile gradient, the hover ring, and the ambient
+// glow that fades in behind the card on hover. One source of truth so the card
+// body stays free of nested ternaries.
+type Accent = 'amber' | 'violet' | 'indigo' | 'cyan' | 'rose' | 'pink' | 'emerald'
+
+const ACCENTS: Record<Accent, { tile: string; ring: string; glow: string }> = {
+  amber: {
+    tile: 'from-amber-500 to-orange-600',
+    ring: 'group-hover:border-amber-400/70',
+    glow: 'from-amber-400/25 to-orange-500/10',
+  },
+  violet: {
+    tile: 'from-violet-500 to-fuchsia-600',
+    ring: 'group-hover:border-violet-400/70',
+    glow: 'from-violet-400/25 to-fuchsia-500/10',
+  },
+  indigo: {
+    tile: 'from-indigo-500 to-emerald-500',
+    ring: 'group-hover:border-indigo-400/70',
+    glow: 'from-indigo-400/25 to-emerald-500/10',
+  },
+  cyan: {
+    tile: 'from-sky-500 to-teal-500',
+    ring: 'group-hover:border-sky-400/70',
+    glow: 'from-sky-400/25 to-teal-500/10',
+  },
+  rose: {
+    tile: 'from-rose-500 to-pink-600',
+    ring: 'group-hover:border-rose-400/70',
+    glow: 'from-rose-400/25 to-pink-500/10',
+  },
+  pink: {
+    // The lab's own logo gradient, so the card and the header agree.
+    tile: 'from-pink-500 via-fuchsia-500 to-violet-600',
+    ring: 'group-hover:border-pink-400/70',
+    glow: 'from-pink-400/25 to-violet-500/10',
+  },
+  emerald: {
+    tile: 'from-emerald-500 to-teal-600',
+    ring: 'group-hover:border-emerald-400/70',
+    glow: 'from-emerald-400/25 to-teal-500/10',
+  },
+}
 
 const JS_MOTION_CHIPS = ['Memory & call stack', 'Heap graph', 'Timeline & breakpoints', 'Quiz mode', 'Shareable links']
 const INTERVIEW_CHIPS = ['10 topics · HTML → MongoDB', 'Live transcript', 'Gemini-powered', 'Score ring + sub-scores']
@@ -300,7 +345,7 @@ function QuizMockup() {
 }
 
 interface LabCardProps {
-  accent: 'amber' | 'violet' | 'indigo' | 'cyan' | 'rose' | 'pink' | 'emerald'
+  accent: Accent
   icon: React.ReactNode
   title: string
   description: string
@@ -310,45 +355,35 @@ interface LabCardProps {
 }
 
 function LabCard({ accent, icon, title, description, chips, href, mockup }: LabCardProps) {
+  const a = ACCENTS[accent]
   return (
     <RevealItem>
       <motion.div
         whileHover={{ y: -4 }}
         transition={{ type: 'spring', stiffness: 300, damping: 22 }}
         className={cn(
-          'group flex h-full flex-col rounded-xl border-2 bg-card p-5 shadow-sm transition-colors sm:p-6',
-          accent === 'amber'
-            ? 'border-border hover:border-amber-400'
-            : accent === 'indigo'
-              ? 'border-border hover:border-indigo-400'
-              : accent === 'cyan'
-                ? 'border-border hover:border-sky-400'
-                : accent === 'rose'
-                  ? 'border-border hover:border-rose-400'
-                  : accent === 'pink'
-                    ? 'border-border hover:border-pink-400'
-                    : accent === 'emerald'
-                      ? 'border-border hover:border-emerald-400'
-                      : 'border-border hover:border-violet-400',
+          'group relative flex h-full flex-col rounded-2xl border border-border bg-card p-5 shadow-sm transition-colors duration-300 sm:p-6',
+          a.ring,
         )}
       >
+        {/* Ambient accent glow, revealed on hover. */}
+        <div
+          aria-hidden
+          className={cn(
+            'pointer-events-none absolute -inset-px -z-10 rounded-2xl bg-linear-to-br opacity-0 blur-xl transition-opacity duration-300 group-hover:opacity-100',
+            a.glow,
+          )}
+        />
+        {/* Subtle top-light so the card reads as a raised surface. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-px rounded-t-2xl bg-linear-to-r from-transparent via-foreground/10 to-transparent"
+        />
+
         <div
           className={cn(
-            'flex h-10 w-10 items-center justify-center rounded-lg text-white shadow-md',
-            accent === 'amber'
-              ? 'bg-linear-to-br from-amber-500 to-orange-600'
-              : accent === 'indigo'
-                ? 'bg-linear-to-br from-indigo-500 to-emerald-500'
-                : accent === 'cyan'
-                  ? 'bg-linear-to-br from-sky-500 to-teal-500'
-                  : accent === 'rose'
-                    ? 'bg-linear-to-br from-rose-500 to-pink-600'
-                    : accent === 'pink'
-                      ? // The lab's own logo gradient, so the card and the header agree.
-                        'bg-linear-to-br from-pink-500 via-fuchsia-500 to-violet-600'
-                      : accent === 'emerald'
-                        ? 'bg-linear-to-br from-emerald-500 to-teal-600'
-                        : 'bg-linear-to-br from-violet-500 to-fuchsia-600',
+            'flex h-11 w-11 items-center justify-center rounded-xl text-white shadow-md bg-linear-to-br',
+            a.tile,
           )}
         >
           {icon}
@@ -366,7 +401,7 @@ function LabCard({ accent, icon, title, description, chips, href, mockup }: LabC
 
         {mockup}
 
-        <Button asChild variant="outline" className="mt-5 w-full justify-between">
+        <Button asChild variant="outline" className="mt-5 w-full justify-between rounded-lg">
           <Link href={href}>
             Open {title}
             <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
@@ -380,14 +415,13 @@ function LabCard({ accent, icon, title, description, chips, href, mockup }: LabC
 export function LabsShowcase() {
   return (
     <section id="labs" className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
-      <Reveal className="text-center">
-        <h2 className="text-2xl font-bold sm:text-3xl">Eight labs. One goal: make it click.</h2>
-        <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground sm:text-base">
-          Every concept here is something you run, watch, or say — not just something you read.
-        </p>
-      </Reveal>
+      <SectionHeading
+        eyebrow="The Labs"
+        title="Eight labs. One goal: make it click."
+        subtitle="Every concept here is something you run, watch, or say — not just something you read."
+      />
 
-      <Reveal stagger className="mt-10 grid grid-cols-1 gap-5 lg:grid-cols-3">
+      <Reveal stagger className="mt-12 grid grid-cols-1 gap-5 lg:grid-cols-3">
         <LabCard
           accent="amber"
           icon={<Cpu className="h-5 w-5" />}
@@ -428,7 +462,7 @@ export function LabsShowcase() {
           mockup={<InterviewMockup />}
         />
 
-          <LabCard
+        <LabCard
           accent="rose"
           icon={<LifeBuoy className="h-5 w-5" />}
           title="Support Session"
@@ -437,7 +471,6 @@ export function LabsShowcase() {
           href="/labs/support"
           mockup={<SupportMockup />}
         />
-
 
         <LabCard
           accent="indigo"
@@ -466,7 +499,6 @@ export function LabsShowcase() {
           href="/labs/quiz"
           mockup={<QuizMockup />}
         />
-      
       </Reveal>
     </section>
   )

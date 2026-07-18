@@ -1,5 +1,6 @@
 import { LandingHeader } from '@/components/landing/landing-header'
 import { Hero } from '@/components/landing/hero'
+import { PathSpotlight } from '@/components/landing/path-spotlight'
 import { LabsShowcase } from '@/components/landing/labs-showcase'
 import { HiveShowcase } from '@/components/landing/hive-showcase'
 import { Journey } from '@/components/landing/journey'
@@ -13,6 +14,7 @@ export default function Home() {
       <LandingHeader />
       <main>
         <Hero />
+        <PathSpotlight />
         <LabsShowcase />
         <HiveShowcase />
         <Journey />
