@@ -1,6 +1,7 @@
 import { Type } from '@google/genai'
 import { topicById, levelById, type LevelId, type LanguageId } from '@/lib/interview/topics'
 import type { InterviewReport } from '@/lib/interview/report-types'
+import { subtopicsForTopic } from '@/lib/interview/questions'
 import { requireUser } from '@/lib/auth-server'
 import { errorResponse } from '@/lib/interview/errors'
 import { prisma } from '@/lib/prisma'
@@ -56,14 +57,30 @@ const REPORT_SCHEMA = {
         propertyOrdering: ['question', 'feedback', 'rating'],
       },
     },
+    subtopicCoverage: {
+      type: Type.ARRAY,
+      description: 'Rate each sub-topic from the list below. Mark covered=true if the candidate was asked about it. Rate 0-10 based on answer quality.',
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          id: { type: Type.STRING, description: 'The subtopic ID.' },
+          label: { type: Type.STRING, description: 'Human-readable label.' },
+          covered: { type: Type.BOOLEAN },
+          rating: { type: Type.INTEGER, description: '0-10 if covered, else 0.' },
+        },
+        required: ['id', 'label', 'covered', 'rating'],
+        propertyOrdering: ['id', 'label', 'covered', 'rating'],
+      },
+    },
     suggestions: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Concrete study/practice suggestions.' },
     summary: { type: Type.STRING, description: 'One short paragraph summarising the round.' },
   },
-  required: ['overallScore', 'verdict', 'scores', 'strengths', 'improvements', 'perQuestion', 'suggestions', 'summary'],
-  propertyOrdering: ['overallScore', 'verdict', 'scores', 'strengths', 'improvements', 'perQuestion', 'suggestions', 'summary'],
+  required: ['overallScore', 'verdict', 'scores', 'strengths', 'improvements', 'perQuestion', 'subtopicCoverage', 'suggestions', 'summary'],
+  propertyOrdering: ['overallScore', 'verdict', 'scores', 'strengths', 'improvements', 'perQuestion', 'subtopicCoverage', 'suggestions', 'summary'],
 }
 
-function notEnoughSignal(topicLabel: string): InterviewReport {
+function notEnoughSignal(topicLabel: string, topicId: string): InterviewReport {
+  const subtopics = subtopicsForTopic(topicId)
   return {
     overallScore: 0,
     verdict: 'Not enough signal',
@@ -71,6 +88,7 @@ function notEnoughSignal(topicLabel: string): InterviewReport {
     strengths: [],
     improvements: ['The interview ended before you answered enough questions to be scored.'],
     perQuestion: [],
+    subtopicCoverage: (subtopics?.subtopics ?? []).map((s) => ({ id: s.id, label: s.label, covered: false, rating: 0 })),
     suggestions: [`Start a new ${topicLabel} round and try to answer at least two full questions out loud.`],
     summary:
       "There wasn't enough of a conversation to assess your skills. Give it another go and speak through your reasoning — even a partial answer gives the interviewer something to score.",
@@ -108,13 +126,18 @@ export async function POST(request: Request) {
 
   const candidateTurns = transcript.filter((t) => t?.role === 'candidate' && t?.text?.trim().length > 0)
   if (candidateTurns.length < 2) {
-    const report = notEnoughSignal(topicLabel)
+    const report = notEnoughSignal(topicLabel, topicId)
     await prisma.interviewSession.update({
       where: { id: sessionId },
       data: { report: report as unknown as object, overallScore: 0, status: 'COMPLETED', endedAt: session.endedAt ?? new Date() },
     })
     return Response.json(report)
   }
+
+  const subtopicEntry = subtopicsForTopic(topicId)
+  const subtopicList = subtopicEntry
+    ? subtopicEntry.subtopics.map((s) => `- ${s.id}: ${s.label}`).join('\n')
+    : ''
 
   const dialogue = transcript
     .map((t) => `${t.role === 'interviewer' ? 'Interviewer' : 'Candidate'}: ${t.text.trim()}`)
@@ -125,8 +148,17 @@ export async function POST(request: Request) {
     'Below is the full transcript. Score the CANDIDATE only (the interviewer is the AI).',
     'Be fair but honest. Base scores strictly on what the candidate actually said. It was a short 3-minute round, so calibrate expectations accordingly.',
     'For perQuestion, include one entry per distinct question the interviewer asked that the candidate responded to.',
+    subtopicList
+      ? [
+          '',
+          'Sub-topics for this topic (evaluate coverage of each):',
+          subtopicList,
+          '',
+          'For subtopicCoverage: for each sub-topic above, set covered=true if the interviewer asked about that area and the candidate responded. Rate the candidate 0-10 for that sub-topic. Set covered=false and rating=0 if it was not touched.',
+        ].join('\n')
+      : '',
     language === 'bn'
-      ? 'Write EVERY string in the report (verdict, strengths, improvements, feedback, suggestions, summary) in Bengali (Bangla). Technical terms may stay in English.'
+      ? 'Write EVERY string in the report (verdict, strengths, improvements, feedback, suggestions, summary, subtopic labels) in Bengali (Bangla). Technical terms may stay in English.'
       : '',
     '',
     'Transcript:',

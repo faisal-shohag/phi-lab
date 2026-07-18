@@ -8,6 +8,7 @@ import {
   HeartHandshake, Briefcase, Gavel, Flame, type LucideIcon,
 } from 'lucide-react'
 import { TOPICS, LEVELS, PRESSURES, ROUND_SECONDS, type LevelId, type PressureId } from '@/lib/interview/topics'
+import { subtopicsForTopic, type Subtopic } from '@/lib/interview/questions'
 import { useRoundLength } from '@/lib/labs/use-round-length'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -22,7 +23,7 @@ const PRESSURE_ICONS: Record<string, LucideIcon> = {
 
 interface SetupScreenProps {
   /** Advance to the green room to choose voice/language and check the mic. */
-  onContinue: (topic: string, level: LevelId, pressure: PressureId) => void
+  onContinue: (topic: string, level: LevelId, pressure: PressureId, subtopicIds: string[]) => void
   /** Optional signed-in user name for a friendly greeting. */
   greeting?: string
 }
@@ -31,10 +32,46 @@ export function SetupScreen({ onContinue, greeting }: SetupScreenProps) {
   const [topic, setTopic] = useState<string | null>(null)
   const [level, setLevel] = useState<LevelId>('medium')
   const [pressure, setPressure] = useState<PressureId>('neutral')
+  const [selectedSubtopics, setSelectedSubtopics] = useState<Set<string>>(new Set())
+  const [showQuestions, setShowQuestions] = useState(false)
   // Admin-tunable; ROUND_SECONDS is only the pre-fetch placeholder.
   const roundSeconds = useRoundLength('interview', ROUND_SECONDS)
 
-  const canContinue = !!topic
+  // Derive subtopics from the selected topic.
+  const topicData = topic ? subtopicsForTopic(topic) : undefined
+  const subtopics: Subtopic[] = topicData?.subtopics ?? []
+  const questions = topicData?.questions ?? []
+
+  // When topic changes, default-select all subtopics.
+  const handleTopicSelect = (id: string) => {
+    if (id !== topic) {
+      const data = subtopicsForTopic(id)
+      if (data) {
+        setSelectedSubtopics(new Set(data.subtopics.map((s) => s.id)))
+      } else {
+        setSelectedSubtopics(new Set())
+      }
+    }
+    setTopic(id)
+  }
+
+  const toggleSubtopic = (id: string) => {
+    setSelectedSubtopics((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const selectAllSubtopics = () => {
+    setSelectedSubtopics(new Set(subtopics.map((s) => s.id)))
+  }
+
+  const questionsForSubtopic = (subId: string) =>
+    questions.filter((q) => q.subtopicId === subId)
+
+  const canContinue = !!topic && selectedSubtopics.size > 0
 
   return (
     <div className="relative mx-auto w-full max-w-3xl px-4 py-8 sm:py-12">
@@ -87,7 +124,7 @@ export function SetupScreen({ onContinue, greeting }: SetupScreenProps) {
               return (
                 <button
                   key={t.id}
-                  onClick={() => setTopic(t.id)}
+                  onClick={() => handleTopicSelect(t.id)}
                   title={t.blurb}
                   className={cn(
                     'group flex flex-col items-start gap-2 rounded-xl border-2 p-3 text-left transition-all duration-150',
@@ -113,9 +150,105 @@ export function SetupScreen({ onContinue, greeting }: SetupScreenProps) {
           </div>
         </section>
 
+        {/* Subtopic chips — only visible after topic selection */}
+        {subtopics.length > 0 && (
+          <section className="mt-6 border-t pt-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-muted-foreground">2. Pick sub-topics</h2>
+              <button
+                type="button"
+                onClick={selectAllSubtopics}
+                className="text-[11px] font-medium text-fuchsia-600 hover:text-fuchsia-700 dark:text-fuchsia-400 dark:hover:text-fuchsia-300"
+              >
+                Select all
+              </button>
+            </div>
+            <p className="mb-3 text-[11px] text-muted-foreground">
+              The AI interviewer will shift between these areas. Unselect any you want to skip.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {subtopics.map((st) => {
+                const selected = selectedSubtopics.has(st.id)
+                const count = questionsForSubtopic(st.id).length
+                return (
+                  <button
+                    key={st.id}
+                    onClick={() => toggleSubtopic(st.id)}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 rounded-full border-2 px-3 py-1.5 text-xs font-medium transition-all duration-150',
+                      selected
+                        ? 'border-fuchsia-500/60 bg-fuchsia-500/10 text-fuchsia-700 shadow-sm dark:text-fuchsia-300'
+                        : 'border-border bg-card text-muted-foreground hover:border-fuchsia-300/50 hover:text-foreground',
+                    )}
+                  >
+                    {selected ? (
+                      <Check className="h-3 w-3" />
+                    ) : (
+                      <span className="h-3 w-3 rounded-full border border-current opacity-50" />
+                    )}
+                    {st.label}
+                    {count > 0 && (
+                      <span className={cn(
+                        'ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] leading-none',
+                        selected
+                          ? 'bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400'
+                          : 'bg-muted text-muted-foreground',
+                      )}>
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Sample questions preview */}
+            {questions.length > 0 && (
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowQuestions(!showQuestions)}
+                  className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <FileCode2 className="h-3 w-3" />
+                  {showQuestions ? 'Hide' : 'Preview'} sample questions ({questions.length})
+                </button>
+                {showQuestions && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    transition={{ duration: 0.2 }}
+                    className="mt-2 max-h-48 overflow-y-auto rounded-xl border bg-muted/30 p-3 space-y-2"
+                  >
+                    {subtopics.filter((st) => selectedSubtopics.has(st.id)).map((st) => {
+                      const stQuestions = questionsForSubtopic(st.id)
+                      if (stQuestions.length === 0) return null
+                      return (
+                        <div key={st.id}>
+                          <p className="text-[11px] font-semibold text-muted-foreground mb-1">{st.label}</p>
+                          <ul className="space-y-1">
+                            {stQuestions.map((q, i) => (
+                              <li key={i} className="text-xs text-foreground/80 flex gap-2">
+                                <span className="shrink-0 text-[10px] font-mono text-muted-foreground mt-0.5">
+                                  {q.difficulty === 'easy' ? '●' : q.difficulty === 'medium' ? '●●' : '●●●'}
+                                </span>
+                                {q.text}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )
+                    })}
+                  </motion.div>
+                )}
+              </div>
+            )}
+          </section>
+        )}
+
         {/* Level segmented control */}
         <section className="mt-6 border-t pt-6">
-          <h2 className="mb-3 text-sm font-semibold text-muted-foreground">2. Pick a difficulty</h2>
+          <h2 className="mb-3 text-sm font-semibold text-muted-foreground">{subtopics.length > 0 ? '3' : '2'}. Pick a difficulty</h2>
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
             {LEVELS.map((l) => {
               const selected = level === l.id
@@ -145,7 +278,7 @@ export function SetupScreen({ onContinue, greeting }: SetupScreenProps) {
 
         {/* Pressure / demeanor — the Anxiety Trainer dimension */}
         <section className="mt-6 border-t pt-6">
-          <h2 className="mb-1 text-sm font-semibold text-muted-foreground">3. Set the pressure</h2>
+          <h2 className="mb-1 text-sm font-semibold text-muted-foreground">{subtopics.length > 0 ? '4' : '3'}. Set the pressure</h2>
           <p className="mb-3 text-[11px] text-muted-foreground">
             Same questions, different nerves. Ramp up to train composure under a tough panel.
           </p>
@@ -193,7 +326,7 @@ export function SetupScreen({ onContinue, greeting }: SetupScreenProps) {
           size="lg"
           className="h-12 w-full max-w-xs border-0 bg-linear-to-r from-amber-500 via-fuchsia-500 to-violet-600 text-base text-white shadow-lg shadow-fuchsia-500/25 transition-all hover:shadow-xl hover:shadow-fuchsia-500/30 hover:brightness-105"
           disabled={!canContinue}
-          onClick={() => topic && onContinue(topic, level, pressure)}
+          onClick={() => topic && onContinue(topic, level, pressure, Array.from(selectedSubtopics))}
         >
           Continue
         </Button>

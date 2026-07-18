@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Zap, TrendingUp, Layers, Mic2, Share2, Moon } from 'lucide-react'
+import { Zap, TrendingUp, Layers, Mic2, Share2, Moon, Brain } from 'lucide-react'
 import { Reveal, RevealItem } from './reveal'
 import { cn } from '@/lib/utils'
 
@@ -12,6 +12,7 @@ const FEATURES = [
   { icon: Mic2, title: 'Voice-first practice', body: 'Speak your answers out loud, the way a real interview works.', accent: 'text-violet-500 bg-violet-500/10' },
   { icon: Share2, title: 'Shareable everything', body: 'Send a link to any visualizer run and pick up right where it left off.', accent: 'text-fuchsia-500 bg-fuchsia-500/10' },
   { icon: Moon, title: 'Dark mode & keyboard friendly', body: 'Built for long study sessions, not just a demo.', accent: 'text-slate-500 bg-slate-500/10' },
+  { icon: Brain, title: 'Second Brain', body: 'Save articles, videos, and notes — then chat with your knowledge using AI.', accent: 'text-indigo-500 bg-indigo-500/10' },
 ]
 
 export function Features() {

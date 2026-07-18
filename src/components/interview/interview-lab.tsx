@@ -58,7 +58,7 @@ export function InterviewLab({ userName }: { userName?: string }) {
         <AnimatePresence mode="wait">
           {iv.phase === 'idle' && (
             <motion.div key="setup" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <SetupScreen onContinue={iv.enterGreenRoom} greeting={userName} />
+              <SetupScreen onContinue={(topic, level, pressure, subtopicIds) => iv.enterGreenRoom(topic, level, pressure, subtopicIds)} greeting={userName} />
             </motion.div>
           )}
 
@@ -117,9 +117,10 @@ export function InterviewLab({ userName }: { userName?: string }) {
                 report={iv.report}
                 topic={iv.topic}
                 level={iv.level}
+                sessionId={iv.sessionId}
                 onNew={iv.reset}
                 onRetry={() => {
-                  if (iv.topic && iv.level) iv.enterGreenRoom(iv.topic, iv.level, iv.pressure)
+                  if (iv.topic && iv.level) iv.enterGreenRoom(iv.topic, iv.level, iv.pressure, iv.subtopicIds)
                 }}
               />
             </motion.div>

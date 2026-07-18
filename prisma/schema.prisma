@@ -1063,3 +1063,6 @@ model AdminAuditLog {
   @@index([actorId, createdAt])
   @@map("admin_audit_log")
 }
+
+// ── Second Brain: AI-Powered Personal Knowledge Base ─────────────────────
+

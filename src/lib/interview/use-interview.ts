@@ -8,6 +8,7 @@ import {
 } from '@google/genai'
 import { ROUND_SECONDS, characterById, type LanguageId, type LevelId, type PressureId } from './topics'
 import { createMicStream, createPlaybackQueue, type MicStream, type PlaybackQueue } from './audio'
+import { AudioRecorder, saveRecording } from './recorder'
 import type { InterviewReport } from './report-types'
 import type { InterviewErrorCode } from './errors'
 import { useLiveUsageReporter } from '@/lib/ai-usage/live-reporter'
@@ -63,9 +64,14 @@ export interface UseInterview {
   pressure: PressureId
   language: LanguageId
   characterId: string
+  subtopicIds: string[]
+  /** The server-side session ID (available once connected). */
+  sessionId: string | null
   /** True when a failed report can be retried (session persisted server-side). */
   canRetryReport: boolean
-  enterGreenRoom: (topic: string, level: LevelId, pressure?: PressureId) => void
+  /** True when an audio recording is available for replay in IndexedDB. */
+  recordingAvailable: boolean
+  enterGreenRoom: (topic: string, level: LevelId, pressure?: PressureId, subtopicIds?: string[]) => void
   start: (opts: StartOptions) => Promise<void>
   retryReport: () => Promise<void>
   endEarly: () => void
@@ -99,6 +105,9 @@ export function useInterview(): UseInterview {
   const [pressure, setPressure] = useState<PressureId>('neutral')
   const [language, setLanguage] = useState<LanguageId>('en')
   const [characterId, setCharacterId] = useState('nova')
+  const [subtopicIds, setSubtopicIds] = useState<string[]>([])
+  const [recordingAvailable, setRecordingAvailable] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(null)
 
   // Live token counts are only visible in the browser; this ships them home.
   const usageReporter = useLiveUsageReporter('INTERVIEW')
@@ -128,11 +137,13 @@ export function useInterview(): UseInterview {
   const roundTotalRef = useRef(ROUND_SECONDS)
   const sessionIdRef = useRef<string | null>(null)
   const transcriptRef = useRef<TranscriptEntry[]>([])
+  const recorderRef = useRef<AudioRecorder | null>(null)
   const topicRef = useRef<string | null>(null)
   const levelRef = useRef<LevelId | null>(null)
   const pressureRef = useRef<PressureId>('neutral')
   const languageRef = useRef<LanguageId>('en')
   const characterRef = useRef('nova')
+  const subtopicIdsRef = useRef<string[]>([])
 
   const appendTranscript = useCallback((role: TranscriptRole, text: string) => {
     if (!text) return
@@ -229,6 +240,21 @@ export function useInterview(): UseInterview {
 
     stopTimers()
     intentionalCloseRef.current = true
+
+    // Capture the recorder BEFORE stopping the mic — stopping the mic kills the
+    // worklet's onmessage handler, which would drop any in-flight mic chunks.
+    const rec = recorderRef.current
+    recorderRef.current = null
+    if (rec && sessionIdRef.current) {
+      try {
+        const { micWav, aiWav } = rec.stop()
+        await saveRecording(sessionIdRef.current, micWav, aiWav)
+        setRecordingAvailable(true)
+      } catch {
+        // Non-fatal — recording is a nice-to-have.
+      }
+    }
+
     micRef.current?.stop()
     micRef.current = null
     setMicAnalyser(null)
@@ -311,6 +337,7 @@ export function useInterview(): UseInterview {
       const data = part.inlineData?.data
       if (data && part.inlineData?.mimeType?.startsWith('audio/')) {
         playbackRef.current?.enqueue(data)
+        recorderRef.current?.pushAi(data)
         setModelSpeaking(true)
       }
     }
@@ -362,6 +389,7 @@ export function useInterview(): UseInterview {
         pressure: pressureRef.current,
         language: languageRef.current,
         characterId: characterRef.current,
+        subtopicIds: subtopicIdsRef.current,
         ...(resume ? { resumeSessionId: sessionIdRef.current, resumeHandle: resumeHandleRef.current ?? undefined } : {}),
       }),
     })
@@ -377,7 +405,10 @@ export function useInterview(): UseInterview {
       roundSeconds: number
     }
     if (!token) throw new Error('Server did not return an interview token.')
-    if (sessionId) sessionIdRef.current = sessionId
+    if (sessionId) {
+      sessionIdRef.current = sessionId
+      setSessionId(sessionId)
+    }
 
     // The round length is admin-tunable, so the server is the authority — the
     // ROUND_SECONDS constant is only the pre-connect placeholder. On a resume
@@ -467,13 +498,15 @@ export function useInterview(): UseInterview {
   // eslint-disable-next-line react-hooks/immutability
   useEffect(() => { handleDropRef.current = handleDrop }, [handleDrop])
 
-  const enterGreenRoom = useCallback((topicId: string, lvl: LevelId, pres: PressureId = 'neutral') => {
+  const enterGreenRoom = useCallback((topicId: string, lvl: LevelId, pres: PressureId = 'neutral', subIds: string[] = []) => {
     setTopic(topicId)
     setLevel(lvl)
     setPressure(pres)
+    setSubtopicIds(subIds)
     topicRef.current = topicId
     levelRef.current = lvl
     pressureRef.current = pres
+    subtopicIdsRef.current = subIds
     setError(null)
     setErrorCode(null)
     setPhase('greenroom')
@@ -503,6 +536,8 @@ export function useInterview(): UseInterview {
     setCharacterId(opts.characterId)
     languageRef.current = opts.language
     characterRef.current = opts.characterId
+    recorderRef.current = new AudioRecorder()
+    setRecordingAvailable(false)
     void characterById(opts.characterId) // validate id early (no-op if unknown)
     setPhase('connecting')
 
@@ -511,6 +546,7 @@ export function useInterview(): UseInterview {
 
       const mic = await createMicStream((base64) => {
         if (mutedRef.current) return
+        recorderRef.current?.pushMic(base64)
         try {
           sessionRef.current?.sendRealtimeInput({ audio: { data: base64, mimeType: 'audio/pcm;rate=16000' } })
         } catch {
@@ -569,7 +605,10 @@ export function useInterview(): UseInterview {
     endingRef.current = false
     wrappedUpRef.current = false
     sessionIdRef.current = null
+    setSessionId(null)
     resumeHandleRef.current = null
+    recorderRef.current?.discard()
+    recorderRef.current = null
     setPhase('idle')
     setError(null)
     setErrorCode(null)
@@ -582,6 +621,7 @@ export function useInterview(): UseInterview {
     roundTotalRef.current = ROUND_SECONDS
     setMuted(false)
     mutedRef.current = false
+    setRecordingAvailable(false)
   }, [teardown, setPhase])
 
   useEffect(() => teardown, [teardown])
@@ -603,8 +643,11 @@ export function useInterview(): UseInterview {
     pressure,
     language,
     characterId,
+    subtopicIds,
+    sessionId,
     // Report failures always leave a persisted session that can be re-scored.
     canRetryReport: errorCode === 'REPORT_FAILED',
+    recordingAvailable,
     enterGreenRoom,
     start,
     retryReport,
