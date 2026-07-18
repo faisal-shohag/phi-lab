@@ -1,5 +1,5 @@
 // In-app notifications. Rows are intentionally not FK'd to HivePost so the
-// bell keeps its history after a post is auto-deleted at 3 days. The bell polls
+// bell keeps its history after a post is auto-deleted at 7 days. The bell polls
 // GET /api/hive/notifications (Phase 5).
 //
 // All helpers are best-effort: a notification failure must never break the

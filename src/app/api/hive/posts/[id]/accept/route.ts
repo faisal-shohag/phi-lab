@@ -101,7 +101,7 @@ export async function POST(
   }
 
   // Distil the thread into a Honeycomb entry. This is what exempts the post
-  // from the 3-day sweep — resolved knowledge is the only thing that survives.
+  // from the 7-day sweep — resolved knowledge is the only thing that survives.
   after(() => archiveToHoneycomb(post.id))
 
   invalidatePost(post.id)

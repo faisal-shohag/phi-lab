@@ -1,6 +1,6 @@
 // Archiving a resolved post into the Honeycomb knowledge base.
 //
-// This is what makes the 3-day TTL safe: the only threads that survive are the
+// This is what makes the 7-day TTL safe: the only threads that survive are the
 // ones with an accepted answer, and they survive as a distilled entry rather
 // than a raw transcript. Runs in `after()` — the student never waits on it.
 import { prisma } from '@/lib/prisma'

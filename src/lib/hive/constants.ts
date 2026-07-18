@@ -2,8 +2,8 @@
 // triage step and composer both draw from. Kept framework-free so both server
 // routes and client components can import them.
 
-/** Questions live 3 days unless resolved+accepted (then archived permanently). */
-export const POST_TTL_MS = 3 * 24 * 60 * 60 * 1000
+/** Questions live 7 days unless resolved+accepted (then archived permanently). */
+export const POST_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 /** A "far future" expiry for announcements/encouragement (never auto-deleted). */
 export const NEVER_EXPIRES = new Date('2999-01-01T00:00:00Z')
