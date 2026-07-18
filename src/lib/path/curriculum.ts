@@ -19,7 +19,7 @@
 import type { Difficulty } from '@/lib/visualizer/challenge'
 
 /** How a step is satisfied. Each kind maps to a lab that already exists. */
-export type StepKind = 'viz' | 'challenge' | 'feynman' | 'english' | 'interview' | 'analogy'
+export type StepKind = 'viz' | 'challenge' | 'feynman' | 'english' | 'interview' | 'analogy' | 'quiz' | 'code' | 'pixel'
 
 export interface PathStep {
   kind: StepKind
@@ -42,12 +42,18 @@ export interface PathStep {
   difficulty?: Difficulty
   /** english: SCENARIOS id. */
   scenario?: string
-  /** interview: TOPICS id. */
+  /** interview: TOPICS id. quiz: QUIZ_TOPICS id the quiz must have covered. */
   topic?: string
-  /** interview: LEVELS id. */
+  /** interview: LEVELS id. quiz: DIFFICULTY_LEVELS id (informational; not matched). */
   level?: string
-  /** feynman clarity / english + interview score the run must clear. */
+  /** feynman clarity / english + interview / quiz score the run must clear. */
   minScore?: number
+  /** code: the Problem.slug an accepted Code Lab submission must target. */
+  slug?: string
+  /** pixel: the Pixel Lab challenge id a submission must have cleared. */
+  pixelId?: string
+  /** pixel: the minimum tier the submission must have reached. Default 'standing'. */
+  tier?: string
 }
 
 export interface PathNode {
@@ -83,6 +89,10 @@ export interface PathModule {
 // runs grade delivery too, and a nervous first attempt should still count.
 const CLARITY_BAR = 60
 const SPEAK_BAR = 50
+// A quiz is multiple-choice, so the bar sits higher than a spoken run — 70/100
+// is "you actually knew most of it", not a coin-flip pass. Quiz alone is interim
+// evidence; nodes that also carry a build/explain step still need those.
+const QUIZ_BAR = 70
 
 const viz = (id: string, demoId: string, concept: string, label: string): PathStep => ({
   kind: 'viz',
@@ -134,6 +144,42 @@ const grill = (topic: string, level: string, label: string, minScore = SPEAK_BAR
   minScore,
 })
 
+// A quiz is fast, interim proof: a completed Quiz Lab run that covered `topic`
+// and cleared the bar. Cheap enough to sprinkle anywhere; it never fully masters
+// a node alone in modules that also demand a build/explain step.
+const quiz = (topic: string, level: string, label: string, minScore = QUIZ_BAR): PathStep => ({
+  kind: 'quiz',
+  id: `quiz-${topic}-${level}`,
+  label,
+  href: `/labs/quiz?topic=${topic}&difficulty=${level}`,
+  minutes: 6,
+  topic,
+  level,
+  minScore,
+})
+
+// Solve a specific Code Lab problem. Unlike a raw challenge win (fungible), this
+// names its problem by slug, so it credits exactly the node that asked for it.
+const solve = (slug: string, label: string): PathStep => ({
+  kind: 'code',
+  id: `solve-${slug}`,
+  label,
+  href: `/labs/code-lab/${slug}`,
+  minutes: 20,
+  slug,
+})
+
+// Clear a Pixel Lab challenge to at least `tier`. Names its challenge by id.
+const pixel = (pixelId: string, label: string, tier: string = 'standing'): PathStep => ({
+  kind: 'pixel',
+  id: `pixel-${pixelId}`,
+  label,
+  href: `/labs/pixel-lab?challenge=${pixelId}`,
+  minutes: 20,
+  pixelId,
+  tier,
+})
+
 export const MODULES: PathModule[] = [
   // ── 1 ────────────────────────────────────────────────────────────────────
   {
@@ -178,6 +224,7 @@ export const MODULES: PathModule[] = [
           viz('see', 'array-max', 'arrays', 'Step through Find Max'),
           viz('see-mutate', 'array-mutation', 'arrays', 'Step through Array Mutation'),
           build('easy', 'Win an Easy challenge'),
+          { ...solve('sum-array', 'Solve “Sum of an Array” in Code Lab'), optional: true },
         ],
       },
       {
@@ -204,6 +251,7 @@ export const MODULES: PathModule[] = [
         steps: [
           viz('see', 'fizzbuzz', 'conditionals', 'Step through FizzBuzz'),
           build('medium', 'Win a Medium challenge'),
+          { ...solve('fizzbuzz', 'Solve “FizzBuzz” in Code Lab'), optional: true },
           grill('javascript', 'easy', 'Survive an Easy JavaScript interview'),
         ],
       },
@@ -395,7 +443,11 @@ export const MODULES: PathModule[] = [
         icon: 'FileCode2',
         requires: ['promises'],
         xp: 45,
-        steps: [grill('html', 'easy', 'Survive an Easy HTML interview')],
+        steps: [
+          pixel('found-01', 'Rebuild a layout in Pixel Lab'),
+          quiz('html', 'beginner', 'Pass an HTML quiz'),
+          grill('html', 'easy', 'Survive an Easy HTML interview'),
+        ],
       },
       {
         id: 'css',
@@ -405,6 +457,8 @@ export const MODULES: PathModule[] = [
         requires: ['html'],
         xp: 55,
         steps: [
+          pixel('navbar-01', 'Rebuild a navbar in Pixel Lab', 'close'),
+          quiz('css', 'intermediate', 'Pass a CSS quiz'),
           grill('css', 'medium', 'Survive a Medium CSS interview'),
           speak('defend-decision', 'Defend a layout decision in English'),
         ],
@@ -427,6 +481,7 @@ export const MODULES: PathModule[] = [
         requires: ['css'],
         xp: 80,
         steps: [
+          quiz('react', 'intermediate', 'Pass a React quiz'),
           grill('react', 'medium', 'Survive a Medium React interview'),
           speak('standup', 'Give a standup update in English'),
         ],
@@ -438,7 +493,10 @@ export const MODULES: PathModule[] = [
         icon: 'PanelsTopLeft',
         requires: ['react-core'],
         xp: 90,
-        steps: [grill('nextjs', 'medium', 'Survive a Medium Next.js interview')],
+        steps: [
+          quiz('nextjs', 'intermediate', 'Pass a Next.js quiz'),
+          grill('nextjs', 'medium', 'Survive a Medium Next.js interview'),
+        ],
       },
       {
         id: 'react-boss',
@@ -468,6 +526,7 @@ export const MODULES: PathModule[] = [
         requires: ['react-boss'],
         xp: 85,
         steps: [
+          quiz('nodejs', 'intermediate', 'Pass a Node.js quiz'),
           grill('nodejs', 'medium', 'Survive a Medium Node.js interview'),
           grill('express', 'medium', 'Survive a Medium Express interview'),
         ],
@@ -479,7 +538,10 @@ export const MODULES: PathModule[] = [
         icon: 'Database',
         requires: ['node-express'],
         xp: 75,
-        steps: [grill('mongodb', 'medium', 'Survive a Medium MongoDB interview')],
+        steps: [
+          quiz('mongodb', 'intermediate', 'Pass a MongoDB quiz'),
+          grill('mongodb', 'medium', 'Survive a Medium MongoDB interview'),
+        ],
       },
       {
         id: 'auth',
@@ -550,6 +612,29 @@ export function moduleOfNode(nodeId: string): PathModule | undefined {
 /** Non-optional steps — the ones that actually gate mastery. */
 export function requiredSteps(node: PathNode): PathStep[] {
   return node.steps.filter((s) => !s.optional)
+}
+
+/**
+ * Every node this one transitively depends on (its `requires`, and theirs, all
+ * the way to the roots). Excludes the node itself. Curriculum order — roots
+ * first — so banking them in this order never violates a prerequisite. This is
+ * what a jump-forward gate credits: to legitimately stand on a node you must
+ * already hold everything upstream of it.
+ */
+export function ancestorsOf(nodeId: string): string[] {
+  const seen = new Set<string>()
+  const walk = (id: string) => {
+    const node = NODE_BY_ID.get(id)
+    if (!node) return
+    for (const req of node.requires) {
+      if (seen.has(req)) continue
+      seen.add(req)
+      walk(req)
+    }
+  }
+  walk(nodeId)
+  // Return in curriculum order for stable, prerequisite-safe banking.
+  return ALL_NODES.filter((n) => seen.has(n.id)).map((n) => n.id)
 }
 
 /** Estimated minutes to finish a node from scratch. Shown on the card. */

@@ -1,6 +1,6 @@
 'use client'
 
-import { RefreshCw, Trophy } from 'lucide-react'
+import { RefreshCw, Trophy, Flag, PartyPopper } from 'lucide-react'
 import type { PathSnapshot } from '@/lib/path/types'
 import { cn } from '@/lib/utils'
 
@@ -11,9 +11,22 @@ interface Props {
   refreshing: boolean
 }
 
+const GOAL_LABEL: Record<NonNullable<PathSnapshot['goal']>, string> = {
+  FRONTEND: 'Front-end',
+  FULLSTACK: 'Full-stack',
+  INTERVIEW_PREP: 'Interview',
+}
+
+// "12 Oct 2026" — the moving date the ETA points at.
+function fmtDate(iso: string): string {
+  const d = new Date(iso + 'T00:00:00Z')
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+}
+
 export function PathHeader({ snap, userName, onRefresh, refreshing }: Props) {
   const pct = snap.totalNodes > 0 ? Math.round((snap.masteredCount / snap.totalNodes) * 100) : 0
   const first = userName.split(' ')[0]
+  const eta = snap.eta
 
   return (
     <div className="rounded-2xl border bg-linear-to-br from-amber-500/10 via-background to-orange-500/5 p-5">
@@ -48,6 +61,23 @@ export function PathHeader({ snap, userName, onRefresh, refreshing }: Props) {
         </div>
         <span className="text-sm font-mono font-bold text-muted-foreground">{pct}%</span>
       </div>
+
+      {eta && (
+        eta.arrived ? (
+          <div className="mt-3 flex items-center gap-1.5 text-sm font-bold text-emerald-600 dark:text-emerald-400">
+            <PartyPopper className="h-4 w-4" />
+            {GOAL_LABEL[eta.goal]} destination reached — you made it, {first}.
+          </div>
+        ) : (
+          <div className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
+            <Flag className="h-4 w-4 text-amber-500" />
+            <span className="font-bold">{GOAL_LABEL[eta.goal]} ready ≈ {fmtDate(eta.targetDate)}</span>
+            <span className="text-muted-foreground">
+              · ~{eta.weeks} {eta.weeks === 1 ? 'week' : 'weeks'}{snap.weeklyHours ? ` at ${snap.weeklyHours} hrs/week` : ''}
+            </span>
+          </div>
+        )
+      )}
     </div>
   )
 }

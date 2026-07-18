@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { Eye, HelpCircle, Mic, LineChart } from 'lucide-react'
 import { Reveal, RevealItem } from './reveal'
+import { SectionHeading } from './section-heading'
 import { cn } from '@/lib/utils'
 
 const STEPS = [
@@ -40,17 +41,16 @@ const STEPS = [
 export function Journey() {
   return (
     <section id="journey" className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
-      <Reveal className="text-center">
-        <h2 className="text-2xl font-bold sm:text-3xl">From first console.log to job-ready</h2>
-        <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground sm:text-base">
-          A guided path for beginner-to-advanced learners — one loop of see, test, speak, and measure.
-        </p>
-      </Reveal>
+      <SectionHeading
+        eyebrow="How it works"
+        title="From first console.log to job-ready"
+        subtitle="A guided path for beginner-to-advanced learners — one loop of see, test, speak, and measure."
+      />
 
-      <Reveal stagger className="relative mt-14">
+      <Reveal stagger className="relative mt-16">
         {/* Connector line */}
         <motion.div
-          className="absolute top-5 left-5 hidden h-0.5 w-[calc(100%-2.5rem)] origin-left bg-border lg:block"
+          className="absolute top-5 left-5 hidden h-0.5 w-[calc(100%-2.5rem)] origin-left bg-linear-to-r from-amber-400 via-violet-400 to-emerald-400 lg:block"
           initial={{ scaleX: 0 }}
           whileInView={{ scaleX: 1 }}
           viewport={{ once: true }}

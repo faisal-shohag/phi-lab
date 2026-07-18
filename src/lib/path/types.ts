@@ -68,6 +68,16 @@ export interface WeeklyReport {
   dailyMinutes: number
 }
 
+/** The moving arrival estimate, projected over the learner's chosen goal + pace. */
+export interface PathEtaView {
+  goal: 'FRONTEND' | 'FULLSTACK' | 'INTERVIEW_PREP'
+  weeks: number
+  /** ISO date, YYYY-MM-DD. */
+  targetDate: string
+  remainingMinutes: number
+  arrived: boolean
+}
+
 export interface PathSnapshot {
   nodes: NodeProgress[]
   masteredCount: number
@@ -79,4 +89,9 @@ export interface PathSnapshot {
   xp: number
   level: number
   levelTitle: string
+  /** The chosen destination + pace. Null until the learner has onboarded. */
+  goal: 'FRONTEND' | 'FULLSTACK' | 'INTERVIEW_PREP' | null
+  weeklyHours: number | null
+  /** The moving ETA over the goal's road. Null until onboarded. */
+  eta: PathEtaView | null
 }

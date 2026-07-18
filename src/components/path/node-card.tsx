@@ -1,17 +1,20 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
+import Link, { useLinkStatus } from 'next/link'
+import { Loader2 } from 'lucide-react'
 import {
   GitFork, Repeat, Brackets, FunctionSquare, Swords, GitBranch, ArrowDownWideNarrow,
   TrendingUp, Braces, Lasso, Link2, Boxes, Timer, Hourglass, FileCode2, Palette,
   Atom, PanelsTopLeft, Server, Database, KeyRound, Users, Crown,
   Lock, CheckCircle2, Circle, ChevronDown, Eye, Hammer, Mic, MessageSquare, Puzzle, AlertTriangle,
+  ListChecks, Code2, Image, Zap,
   type LucideIcon,
 } from 'lucide-react'
 import type { PathNode, PathStep } from '@/lib/path/curriculum'
 import type { NodeProgress, StepProgress } from '@/lib/path/types'
 import { cn } from '@/lib/utils'
+import { GateDialog } from './gate-dialog'
 
 const ICONS: Record<string, LucideIcon> = {
   GitFork, Repeat, Brackets, FunctionSquare, Swords, GitBranch, ArrowDownWideNarrow,
@@ -26,10 +29,14 @@ const STEP_ICON: Record<PathStep['kind'], LucideIcon> = {
   english: MessageSquare,
   interview: Mic,
   analogy: Puzzle,
+  quiz: ListChecks,
+  code: Code2,
+  pixel: Image,
 }
 
-export function NodeCard({ node, progress, active }: { node: PathNode; progress: NodeProgress; active: boolean }) {
+export function NodeCard({ node, progress, active, onChanged }: { node: PathNode; progress: NodeProgress; active: boolean; onChanged: () => void }) {
   const [open, setOpen] = useState(active && progress.state !== 'mastered')
+  const [gateOpen, setGateOpen] = useState(false)
   const Icon = ICONS[node.icon] ?? Circle
   const locked = progress.state === 'locked'
   const mastered = progress.state === 'mastered'
@@ -92,6 +99,27 @@ export function NodeCard({ node, progress, active }: { node: PathNode; progress:
           })}
         </div>
       )}
+
+      {/* Locked nodes are never a dead end: prove the prerequisites and teleport. */}
+      {locked && (
+        <div className="border-t px-3 py-2">
+          <button
+            onClick={() => setGateOpen(true)}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-amber-400/40 px-3 py-1.5 text-xs font-semibold text-amber-600 transition hover:bg-amber-500/10 dark:text-amber-400"
+          >
+            <Zap className="h-3.5 w-3.5" /> Already know this? Prove it to skip ahead
+          </button>
+        </div>
+      )}
+
+      {gateOpen && (
+        <GateDialog
+          nodeId={node.id}
+          nodeTitle={node.title}
+          onClose={() => setGateOpen(false)}
+          onPassed={onChanged}
+        />
+      )}
     </div>
   )
 }
@@ -116,10 +144,23 @@ function StepRow({ step, progress, disabled }: { step: PathStep; progress?: Step
           </p>
         )}
       </div>
-      {!done && !disabled && <span className="text-xs text-muted-foreground">{step.minutes}m</span>}
+      {!done && !disabled && (
+        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+          <StepPending />
+          {step.minutes}m
+        </span>
+      )}
     </div>
   )
 
   if (done || disabled) return body
-  return <Link href={step.href}>{body}</Link>
+  return <Link href={step.href} prefetch>{body}</Link>
+}
+
+// Slow-network feedback: while the router is fetching the lab this step links to,
+// show a spinner. useLinkStatus reads the pending state of the enclosing <Link>,
+// so this must render inside one.
+function StepPending() {
+  const { pending } = useLinkStatus()
+  return pending ? <Loader2 className="h-3 w-3 animate-spin text-amber-500" /> : null
 }

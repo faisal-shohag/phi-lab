@@ -40,8 +40,11 @@ export function HiveShowcase() {
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
         <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-14">
           <Reveal>
-            <Badge className="bg-linear-to-br from-amber-500 to-orange-600 text-white">New</Badge>
-            <h2 className="mt-3 text-2xl font-bold sm:text-3xl">
+            <span className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-600 dark:text-amber-400">
+              <Badge className="bg-linear-to-br from-amber-500 to-orange-600 px-2 py-0 text-[10px] text-white">New</Badge>
+              The Hive
+            </span>
+            <h2 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">
               Hive — the helpdesk that answers itself
             </h2>
             <p className="mt-2 max-w-lg text-sm leading-relaxed text-muted-foreground sm:text-base">

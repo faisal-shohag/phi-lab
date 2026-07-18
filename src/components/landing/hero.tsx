@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { ArrowRight, Mic, Cpu, Sparkles, Route } from 'lucide-react'
+import { ArrowRight, Cpu, Sparkles, Route } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { PhiOrb } from './phi-orb'
@@ -81,9 +81,10 @@ export function Hero() {
             transition={{ delay: 0.24 }}
             className="mt-5 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg"
           >
-            Phi Lab is the first step for beginner-to-advanced learners — interactive labs
-            that turn JavaScript internals and technical interviews into something you can
-            see, run, and practice.
+            Phi Lab is a hands-on platform that takes you from your first{' '}
+            <span className="font-mono text-foreground">console.log</span> to job-ready — a
+            guided path of interactive labs where you watch JavaScript actually run, rebuild
+            real UIs, and practice interviews out loud with AI.
           </motion.p>
 
           <motion.div
@@ -124,8 +125,8 @@ export function Hero() {
               'mt-10 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-muted-foreground',
             )}
           >
-            <span className="flex items-center gap-1.5"><ArrowRight className="h-3.5 w-3.5 text-amber-500" /> 10+ interview topics</span>
-            <span className="flex items-center gap-1.5"><ArrowRight className="h-3.5 w-3.5 text-violet-500" /> Step-level JS tracing</span>
+            <span className="flex items-center gap-1.5"><ArrowRight className="h-3.5 w-3.5 text-amber-500" /> 8 interactive labs</span>
+            <span className="flex items-center gap-1.5"><ArrowRight className="h-3.5 w-3.5 text-violet-500" /> One guided path</span>
             <span className="flex items-center gap-1.5"><ArrowRight className="h-3.5 w-3.5 text-fuchsia-500" /> AI voice feedback</span>
           </motion.div>
         </div>

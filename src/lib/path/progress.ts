@@ -35,6 +35,12 @@ export interface Evidence {
   english: Scored[]
   interview: (Scored & { topic: string; level: string })[]
   analogies: { concept: string; createdAt: Date }[]
+  /** Completed Quiz Lab runs. `topics` is the set the quiz covered. */
+  quizzes: { topics: string[]; score: number; createdAt: Date }[]
+  /** Problem slug → date first accepted in Code Lab. Concept-named, not fungible. */
+  codeSolved: Map<string, Date>
+  /** Pixel challenge id → the tiers it cleared and when it first did. */
+  pixelCleared: Map<string, { tiers: Set<string>; createdAt: Date }>
   mastered: Map<string, Date>
 }
 
@@ -46,7 +52,7 @@ interface Scored {
 }
 
 export async function loadEvidence(userId: string): Promise<Evidence> {
-  const [vizEvents, attempts, feynman, english, interview, analogies, mastered] = await Promise.all([
+  const [vizEvents, attempts, feynman, english, interview, analogies, quizzes, code, pixel, mastered] = await Promise.all([
     prisma.xpEvent.findMany({
       where: { userId, reason: 'viz_concept' },
       select: { meta: true, createdAt: true },
@@ -69,6 +75,23 @@ export async function loadEvidence(userId: string): Promise<Evidence> {
       select: { topic: true, level: true, overallScore: true, createdAt: true },
     }),
     prisma.analogyCard.findMany({ where: { userId }, select: { concept: true, createdAt: true } }),
+    prisma.quizSession.findMany({
+      where: { userId, status: 'completed' },
+      select: { topics: true, score: true, createdAt: true },
+    }),
+    // Accepted Code Lab submissions, oldest first — the join gives us the slug so
+    // a node's `solve(slug)` step credits the right problem, not any solve.
+    prisma.codeSubmission.findMany({
+      where: { userId, verdict: 'ACCEPTED' },
+      select: { problem: { select: { slug: true } }, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    }),
+    // Every Pixel submission — we union the tiers each challenge ever cleared.
+    prisma.pixelSubmission.findMany({
+      where: { userId },
+      select: { challengeId: true, tiers: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    }),
     prisma.pathProgress.findMany({ where: { userId }, select: { nodeId: true, masteredAt: true } }),
   ])
 
@@ -76,6 +99,24 @@ export async function loadEvidence(userId: string): Promise<Evidence> {
   for (const e of vizEvents) {
     const concept = (e.meta as { concept?: unknown } | null)?.concept
     if (typeof concept === 'string' && !vizConcepts.has(concept)) vizConcepts.set(concept, e.createdAt)
+  }
+
+  // First accept per slug wins the date; rows are ascending, so the first seen is it.
+  const codeSolved = new Map<string, Date>()
+  for (const s of code) {
+    const slug = s.problem?.slug
+    if (slug && !codeSolved.has(slug)) codeSolved.set(slug, s.createdAt)
+  }
+
+  // Union of every tier a challenge cleared, dated by the earliest submission.
+  const pixelCleared = new Map<string, { tiers: Set<string>; createdAt: Date }>()
+  for (const p of pixel) {
+    const entry = pixelCleared.get(p.challengeId)
+    if (entry) {
+      for (const t of p.tiers) entry.tiers.add(t)
+    } else {
+      pixelCleared.set(p.challengeId, { tiers: new Set(p.tiers), createdAt: p.createdAt })
+    }
   }
 
   return {
@@ -86,9 +127,15 @@ export async function loadEvidence(userId: string): Promise<Evidence> {
     english: english.map((s) => ({ key: s.scenario, score: s.overallScore ?? 0, createdAt: s.createdAt })),
     interview: interview.map((s) => ({ key: s.topic, level: s.level, topic: s.topic, score: s.overallScore ?? 0, createdAt: s.createdAt })),
     analogies: analogies.map((a) => ({ concept: a.concept.toLowerCase(), createdAt: a.createdAt })),
+    quizzes: quizzes.map((q) => ({ topics: q.topics, score: q.score ?? 0, createdAt: q.createdAt })),
+    codeSolved,
+    pixelCleared,
     mastered: new Map(mastered.map((p) => [p.nodeId, p.masteredAt])),
   }
 }
+
+// Tier ranking so `pixel(id, 'close')` is satisfied by a 'perfect' clear too.
+const TIER_RANK: Record<string, number> = { standing: 1, close: 2, perfect: 3 }
 
 const fmt = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 
@@ -131,6 +178,33 @@ function evaluateStep(step: PathStep, ev: Evidence, spend: (min: string) => { id
       return card
         ? { id: step.id, done: true, evidence: `Card made · ${fmt(card.createdAt)}`, attempts: 0 }
         : { id: step.id, done: false, attempts: 0 }
+    }
+
+    case 'quiz': {
+      const bar = step.minScore ?? 0
+      const mine = ev.quizzes.filter((q) => !step.topic || q.topics.includes(step.topic))
+      const passed = mine.filter((q) => q.score >= bar).sort((a, b) => b.score - a.score)[0]
+      if (passed) {
+        return { id: step.id, done: true, evidence: `Quiz cleared — ${passed.score}/100 · ${fmt(passed.createdAt)}`, attempts: 0 }
+      }
+      const best = mine.reduce((m, q) => Math.max(m, q.score), 0)
+      return { id: step.id, done: false, attempts: mine.length, bestScore: mine.length > 0 ? best : undefined }
+    }
+
+    case 'code': {
+      const at = step.slug ? ev.codeSolved.get(step.slug) : undefined
+      return at
+        ? { id: step.id, done: true, evidence: `Solved it · ${fmt(at)}`, attempts: 0 }
+        : { id: step.id, done: false, attempts: 0 }
+    }
+
+    case 'pixel': {
+      const entry = step.pixelId ? ev.pixelCleared.get(step.pixelId) : undefined
+      const need = TIER_RANK[step.tier ?? 'standing'] ?? 1
+      const cleared = entry && [...entry.tiers].some((t) => (TIER_RANK[t] ?? 0) >= need)
+      return cleared
+        ? { id: step.id, done: true, evidence: `Rebuilt it · ${fmt(entry.createdAt)}`, attempts: 0 }
+        : { id: step.id, done: false, attempts: entry ? 1 : 0 }
     }
   }
 }
