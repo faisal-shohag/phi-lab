@@ -2,6 +2,7 @@ import { redirect, notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { requireUser } from '@/lib/auth-server'
 import { getContestProblemForLearner } from '@/lib/code-lab/contests'
+import { getProblemStats } from '@/lib/code-lab/queries'
 import { Workspace } from '@/components/code-lab/workspace'
 
 export async function generateMetadata({ params }: { params: Promise<{ problemSlug: string }> }): Promise<Metadata> {
@@ -22,10 +23,13 @@ export default async function ContestProblemPage({
   const entry = await getContestProblemForLearner(slug, problemSlug, user.id)
   if (!entry) notFound()
 
+  const stats = getProblemStats(entry.problem.id)
+
   return (
     <Workspace
       problem={entry.problem}
       initialTab="description"
+      stats={stats}
       contest={{
         id: entry.contest.id,
         slug: entry.contest.slug,
