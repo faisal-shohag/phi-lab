@@ -267,7 +267,10 @@ export default function Home() {
   const [openTopics, setOpenTopics] = useState<Set<TopicId>>(new Set([PROBLEM_TOPICS[0].id]))
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set())
   const [progressPercent, setProgressPercent] = useState<number | null>(null)
-  const [challengeUnlocked, setChallengeUnlocked] = useState(false)
+  // Defaults true while the gate is opted out (see problems-progress.ts). This
+  // also covers guests, who never call the progress endpoint. Revert to false
+  // when the gate comes back so a below-gate member doesn't flash "unlocked".
+  const [challengeUnlocked, setChallengeUnlocked] = useState(true)
   const [remainingForGate, setRemainingForGate] = useState(0)
   const [gateTopicComplete, setGateTopicComplete] = useState(false)
   const activeProblem = problemById(activeProblemId)
