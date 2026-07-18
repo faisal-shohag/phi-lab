@@ -13,7 +13,9 @@
 import { prisma } from '@/lib/prisma'
 import { awardXp } from '@/lib/gamification/award'
 import { ALL_NODES, nodeById, requiredSteps } from './curriculum'
+import { goalNodes, type PathGoal } from './goals'
 import { evaluate, loadEvidence, type Evidence } from './progress'
+import { getProfile } from './profile'
 import type { NodeProgress, QuestItem, QuestView } from './types'
 
 const DAILY_TARGET_MINUTES = 25
@@ -34,13 +36,18 @@ function daysBetween(a: Date, b: Date): number {
  * it is deterministic: the same learner on the same day gets the same quest even
  * if the row has to be recreated.
  */
-function compose(nodes: NodeProgress[], ev: Evidence): Omit<QuestItem, 'done'>[] {
+function compose(nodes: NodeProgress[], ev: Evidence, goal: PathGoal | null): Omit<QuestItem, 'done'>[] {
   const byId = new Map(nodes.map((n) => [n.nodeId, n]))
   const items: Omit<QuestItem, 'done'>[] = []
   let minutes = 0
 
+  // Walk the learner's goal road, in order. Nodes off the road (e.g. the backend
+  // module for a front-end goal) never enter Today, so the daily loop always aims
+  // at the frontier nearest the destination — not just the next curriculum node.
+  const road = goal ? goalNodes(goal) : ALL_NODES
+
   // Fresh work first: the unfinished required steps of whatever nodes are open.
-  for (const node of ALL_NODES) {
+  for (const node of road) {
     const p = byId.get(node.id)
     if (!p || (p.state !== 'in-progress' && p.state !== 'available')) continue
     for (const step of requiredSteps(node)) {
@@ -92,10 +99,11 @@ export async function getQuest(userId: string): Promise<QuestView> {
   const day = todayUTC()
   const ev = await loadEvidence(userId)
   const nodes = evaluate(ev)
+  const profile = await getProfile(userId)
 
   let row = await prisma.dailyQuest.findUnique({ where: { userId_day: { userId, day } } })
   if (!row) {
-    const composed = compose(nodes, ev)
+    const composed = compose(nodes, ev, profile?.goal ?? null)
     // A learner with nothing open (brand new, or fully done) still gets a row so
     // the streak logic has something to read; it is just empty.
     row = await prisma.dailyQuest.create({

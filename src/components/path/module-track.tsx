@@ -9,9 +9,11 @@ interface Props {
   module: PathModule
   nodes: NodeProgress[]
   activeNodeId: string | null
+  /** Re-pull the snapshot after a gate pass unlocks/credits nodes. */
+  onChanged: () => void
 }
 
-export function ModuleTrack({ module, nodes, activeNodeId }: Props) {
+export function ModuleTrack({ module, nodes, activeNodeId, onChanged }: Props) {
   const byId = new Map(nodes.map((n) => [n.nodeId, n]))
   const mastered = module.nodes.filter((n) => byId.get(n.id)?.state === 'mastered').length
   const locked = module.nodes.every((n) => byId.get(n.id)?.state === 'locked')
@@ -33,7 +35,7 @@ export function ModuleTrack({ module, nodes, activeNodeId }: Props) {
         {module.nodes.map((node) => {
           const p = byId.get(node.id)
           if (!p) return null
-          return <NodeCard key={node.id} node={node} progress={p} active={node.id === activeNodeId} />
+          return <NodeCard key={node.id} node={node} progress={p} active={node.id === activeNodeId} onChanged={onChanged} />
         })}
       </div>
     </section>

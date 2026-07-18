@@ -69,6 +69,7 @@ model User {
   hiveFollows       HiveFollow[]
   hiveNotifications HiveNotification[]
   pathProgress      PathProgress[]
+  pathProfile       PathProfile?
   dailyQuests       DailyQuest[]
   weeklyPlans       WeeklyPlan[]
   codeSubmissions   CodeSubmission[]
@@ -722,6 +723,34 @@ model PathProgress {
   @@unique([userId, nodeId])
   @@index([userId, masteredAt])
   @@map("path_progress")
+}
+
+// The learner's destination and pace — the two inputs (besides evidence) the
+// route/ETA needs. One row per learner, created by the /path/start onboarding.
+// `placedAt` records that the adaptive placement gauntlet has run; `onboardedAt`
+// that the three questions were answered. The map itself stays in PathProgress —
+// this table only personalizes ordering and the ETA, never mastery.
+enum PathGoal {
+  FRONTEND
+  FULLSTACK
+  INTERVIEW_PREP
+}
+
+model PathProfile {
+  id          String    @id @default(cuid())
+  userId      String    @unique
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal        PathGoal  @default(FULLSTACK)
+  /** Hours per week the learner says they can commit. Drives the ETA. */
+  weeklyHours Int       @default(6)
+  /** Set when the adaptive placement gauntlet has run at least once. */
+  placedAt    DateTime?
+  /** Set when the three onboarding questions were answered. */
+  onboardedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("path_profile")
 }
 
 // One composed quest per learner per UTC day. `items` is the frozen list of

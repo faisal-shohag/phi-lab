@@ -15,6 +15,9 @@ function emptyEvidence(over: Partial<Evidence> = {}): Evidence {
     english: [],
     interview: [],
     analogies: [],
+    quizzes: [],
+    codeSolved: new Map(),
+    pixelCleared: new Map(),
     mastered: new Map(),
     ...over,
   }
@@ -111,6 +114,37 @@ describe('evaluate — struggle signal', () => {
     const step = nodes.find((n) => n.nodeId === 'functions')!.steps.find((s) => s.id === 'explain-scope')!
     expect(step.done).toBe(true)
     expect(step.evidence).toContain('72/100')
+  })
+})
+
+describe('evaluate — wired-in labs (quiz / code / pixel)', () => {
+  const stepOf = (nodes: ReturnType<typeof evaluate>, nodeId: string, stepId: string) =>
+    nodes.find((n) => n.nodeId === nodeId)!.steps.find((s) => s.id === stepId)!
+
+  it('credits a Code Lab solve by exact slug', () => {
+    const nodes = evaluate(emptyEvidence({ codeSolved: new Map([['sum-array', new Date()]]) }))
+    expect(stepOf(nodes, 'arrays', 'solve-sum-array').done).toBe(true)
+    // A different slug does not satisfy it.
+    const other = evaluate(emptyEvidence({ codeSolved: new Map([['two-sum', new Date()]]) }))
+    expect(stepOf(other, 'arrays', 'solve-sum-array').done).toBe(false)
+  })
+
+  it('credits a quiz that covered the topic and cleared the 70 bar', () => {
+    const pass = evaluate(emptyEvidence({ quizzes: [{ topics: ['html', 'css'], score: 82, createdAt: new Date() }] }))
+    expect(stepOf(pass, 'html', 'quiz-html-beginner').done).toBe(true)
+    // Under the bar: not done, but the best score is surfaced as a struggle signal.
+    const fail = evaluate(emptyEvidence({ quizzes: [{ topics: ['html'], score: 60, createdAt: new Date() }] }))
+    const step = stepOf(fail, 'html', 'quiz-html-beginner')
+    expect(step.done).toBe(false)
+    expect(step.bestScore).toBe(60)
+  })
+
+  it('treats a higher pixel tier as satisfying a lower requirement, and vice-versa fails', () => {
+    // css asks for at least 'close' on navbar-01.
+    const perfect = evaluate(emptyEvidence({ pixelCleared: new Map([['navbar-01', { tiers: new Set(['standing', 'close', 'perfect']), createdAt: new Date() }]]) }))
+    expect(stepOf(perfect, 'css', 'pixel-navbar-01').done).toBe(true)
+    const tooLow = evaluate(emptyEvidence({ pixelCleared: new Map([['navbar-01', { tiers: new Set(['standing']), createdAt: new Date() }]]) }))
+    expect(stepOf(tooLow, 'css', 'pixel-navbar-01').done).toBe(false)
   })
 })
 

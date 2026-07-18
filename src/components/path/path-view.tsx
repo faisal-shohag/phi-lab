@@ -65,7 +65,7 @@ export function PathView({ initial, modules, userName }: Props) {
 
       <div className="space-y-8">
         {modules.map((m) => (
-          <ModuleTrack key={m.id} module={m} nodes={snap.nodes} activeNodeId={snap.activeNodeId} />
+          <ModuleTrack key={m.id} module={m} nodes={snap.nodes} activeNodeId={snap.activeNodeId} onChanged={refetch} />
         ))}
       </div>
     </div>
