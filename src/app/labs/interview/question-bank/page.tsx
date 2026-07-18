@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowLeft, Search, BookOpen, Filter, ChevronDown, ChevronUp,
+  MessageCircle, Send, Loader2, X,
   FileCode2, Palette, Braces, FileType2, Atom, PanelsTopLeft, Hexagon,
   Server, KeyRound, Database, type LucideIcon,
 } from 'lucide-react'
@@ -15,6 +16,7 @@ import { UserMenu } from '@/components/auth/user-menu'
 import { Logo } from '@/components/brand/logo'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { HiveMarkdown } from '@/components/hive/markdown'
 import { cn } from '@/lib/utils'
 
 const ICONS: Record<string, LucideIcon> = {
@@ -41,6 +43,11 @@ export default function QuestionBankPage() {
   const [selectedDifficulties, setSelectedDifficulties] = useState<Set<Difficulty>>(new Set(['easy', 'medium', 'expert']))
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
+  const [chatQuestion, setChatQuestion] = useState<QuestionWithMeta | null>(null)
+  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const chatEndRef = useRef<HTMLDivElement>(null)
 
   // Flatten all questions with metadata
   const allQuestions = useMemo(() => {
@@ -138,6 +145,55 @@ export default function QuestionBankPage() {
   const collapseAll = () => {
     setExpanded(new Set())
   }
+
+  const openChat = (q: QuestionWithMeta) => {
+    setChatQuestion(q)
+    setChatMessages([])
+    setChatInput('')
+  }
+
+  const closeChat = () => {
+    setChatQuestion(null)
+    setChatMessages([])
+    setChatInput('')
+  }
+
+  const sanitize = (s: string) =>
+    s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\u200B-\u200F\u2028-\u202F\uFEFF]/g, '').trim()
+
+  const sendChat = async () => {
+    const raw = sanitize(chatInput)
+    if (!raw || !chatQuestion || chatLoading) return
+    const userMsg = raw
+    setChatInput('')
+    setChatMessages((prev) => [...prev, { role: 'user', content: userMsg }])
+    setChatLoading(true)
+
+    try {
+      const res = await fetch('/api/interview/question-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: chatQuestion.text,
+          answer: chatQuestion.answer,
+          topic: chatQuestion.topicLabel,
+          subtopic: chatQuestion.subtopicLabel,
+          message: userMsg,
+          history: chatMessages,
+        }),
+      })
+      const data = await res.json()
+      setChatMessages((prev) => [...prev, { role: 'assistant', content: data.reply ?? 'Sorry, I could not generate a response.' }])
+    } catch {
+      setChatMessages((prev) => [...prev, { role: 'assistant', content: 'Failed to get a response. Please try again.' }])
+    } finally {
+      setChatLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages])
 
   return (
     <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
@@ -356,24 +412,19 @@ export default function QuestionBankPage() {
                           className="overflow-hidden"
                         >
                           <div className="border-t bg-muted/30 px-3.5 py-3">
-                            <p className="text-xs font-semibold text-muted-foreground mb-2">What the interviewer is looking for:</p>
-                            <ul className="space-y-1.5 text-xs text-foreground/80">
-                              <li className="flex gap-2">
-                                <span className="text-fuchsia-500 mt-0.5">→</span>
-                                <span>Demonstrate understanding of core concepts</span>
-                              </li>
-                              <li className="flex gap-2">
-                                <span className="text-fuchsia-500 mt-0.5">→</span>
-                                <span>Provide real-world examples or use cases</span>
-                              </li>
-                              <li className="flex gap-2">
-                                <span className="text-fuchsia-500 mt-0.5">→</span>
-                                <span>Explain trade-offs and alternatives</span>
-                              </li>
-                            </ul>
-                            <p className="mt-3 text-[11px] text-muted-foreground italic">
-                              This question may appear in an interview about {q.topicLabel}, focusing on {q.subtopicLabel}.
-                            </p>
+                            <p className="text-xs font-semibold text-muted-foreground mb-2">Answer:</p>
+                            <p className="text-sm text-foreground/90 leading-relaxed">{q.answer}</p>
+                            <div className="mt-3 flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-[11px] gap-1.5 border-fuchsia-500/30 text-fuchsia-600 hover:bg-fuchsia-500/10 dark:text-fuchsia-400"
+                                onClick={(e) => { e.stopPropagation(); openChat(q) }}
+                              >
+                                <MessageCircle className="h-3 w-3" />
+                                Ask AI about this
+                              </Button>
+                            </div>
                           </div>
                         </motion.div>
                       )}
@@ -385,6 +436,116 @@ export default function QuestionBankPage() {
           </AnimatePresence>
         </div>
       </main>
+
+      {/* Chat panel overlay */}
+      <AnimatePresence>
+        {chatQuestion && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-end justify-end bg-black/40 p-4 sm:items-center sm:justify-end"
+            onClick={closeChat}
+          >
+            <motion.div
+              initial={{ x: 400, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: 400, opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              onClick={(e) => e.stopPropagation()}
+              className="flex h-[80vh] w-full max-w-md flex-col rounded-2xl border-2 border-border bg-card shadow-2xl"
+            >
+              {/* Chat header */}
+              <div className="flex items-center gap-3 border-b px-4 py-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-fuchsia-500/10">
+                  <MessageCircle className="h-4 w-4 text-fuchsia-600 dark:text-fuchsia-400" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold">Ask AI</p>
+                  <p className="truncate text-[11px] text-muted-foreground">{chatQuestion.topicLabel} · {chatQuestion.subtopicLabel}</p>
+                </div>
+                <button onClick={closeChat} className="rounded-lg p-1.5 hover:bg-accent transition-colors">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Question context */}
+              <div className="border-b bg-muted/30 px-4 py-3">
+                <p className="text-[11px] font-semibold text-muted-foreground mb-1">Question</p>
+                <p className="text-xs text-foreground/80 leading-relaxed">{chatQuestion.text}</p>
+                <p className="mt-2 text-[11px] font-semibold text-muted-foreground mb-1">Answer</p>
+                <p className="text-xs text-foreground/80 leading-relaxed">{chatQuestion.answer}</p>
+              </div>
+
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+                {chatMessages.length === 0 && (
+                  <div className="flex flex-col items-center gap-2 py-8 text-center">
+                    <MessageCircle className="h-8 w-8 text-muted-foreground/30" />
+                    <p className="text-xs text-muted-foreground">Ask anything about this question to learn more.</p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {['Can you explain this in simpler terms?', 'Give me a real-world example.', 'What are common mistakes?'].map((suggestion) => (
+                        <button
+                          key={suggestion}
+                          onClick={() => { setChatInput(suggestion) }}
+                          className="rounded-full border bg-card px-2.5 py-1 text-[10px] text-muted-foreground hover:border-fuchsia-300/50 hover:text-foreground transition-colors"
+                        >
+                          {suggestion}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {chatMessages.map((msg, i) => (
+                  <div key={i} className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
+                    <div className={cn(
+                      'max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed',
+                      msg.role === 'user'
+                        ? 'bg-fuchsia-500 text-white'
+                        : 'bg-muted text-foreground',
+                    )}>
+                      {msg.role === 'user'
+                        ? msg.content
+                        : <HiveMarkdown className="text-xs">{msg.content}</HiveMarkdown>
+                      }
+                    </div>
+                  </div>
+                ))}
+                {chatLoading && (
+                  <div className="flex justify-start">
+                    <div className="rounded-xl bg-muted px-3 py-2 text-xs">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    </div>
+                  </div>
+                )}
+                <div ref={chatEndRef} />
+              </div>
+
+              {/* Input */}
+              <div className="border-t px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat() } }}
+                    placeholder="Ask a follow-up question..."
+                    className="flex-1 rounded-xl border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:border-fuchsia-500/50 focus:outline-none focus:ring-1 focus:ring-fuchsia-500/20"
+                  />
+                  <Button
+                    size="sm"
+                    onClick={sendChat}
+                    disabled={!chatInput.trim() || chatLoading}
+                    className="h-8 w-8 rounded-xl p-0 bg-fuchsia-500 hover:bg-fuchsia-600"
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
