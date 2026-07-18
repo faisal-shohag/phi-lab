@@ -1,7 +1,7 @@
 import { redirect, notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { requireUser } from '@/lib/auth-server'
-import { getLearnerProblem } from '@/lib/code-lab/queries'
+import { getLearnerProblem, getProblemStats } from '@/lib/code-lab/queries'
 import { Workspace } from '@/components/code-lab/workspace'
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -26,5 +26,9 @@ export default async function CodeLabProblemPage({
   const { tab } = await searchParams
   const initialTab = tab === 'submissions' ? 'submissions' : 'description'
 
-  return <Workspace problem={problem} initialTab={initialTab} />
+  // Not awaited — streamed to the client so the counts fill in without blocking
+  // the editor.
+  const stats = getProblemStats(problem.id)
+
+  return <Workspace problem={problem} initialTab={initialTab} stats={stats} />
 }

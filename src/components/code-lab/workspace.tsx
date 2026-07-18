@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { Suspense, use, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Play, Send, RotateCcw, Lightbulb, CheckCircle2, Tags, Code2, FileText, History, Loader2, Users } from 'lucide-react'
 import { toast } from 'sonner'
@@ -37,7 +37,7 @@ import { loadDraft, saveDraft, clearDraft } from '@/lib/code-lab/drafts'
 import { refreshXp } from '@/lib/gamification/use-xp'
 import { cn } from '@/lib/utils'
 import { stableSerialize } from '@/lib/code-lab/serialize'
-import type { LearnerProblem } from '@/lib/code-lab/queries'
+import type { LearnerProblem, ProblemStats } from '@/lib/code-lab/queries'
 import type { CodeLanguage, SubmitResponse } from '@/lib/code-lab/types'
 
 type LeftTab = 'description' | 'submissions'
@@ -55,10 +55,13 @@ export function Workspace({
   problem,
   initialTab,
   contest,
+  stats,
 }: {
   problem: LearnerProblem
   initialTab: LeftTab
   contest?: ContestContext
+  /** Solver/attempt counts, streamed in so they don't block the editor paint. */
+  stats?: Promise<ProblemStats>
 }) {
   const starterFor = (lang: CodeLanguage) => (lang === 'TYPESCRIPT' ? problem.starterTs : problem.starterJs)
   const allowed = problem.languages.length > 0 ? problem.languages : (['JAVASCRIPT', 'TYPESCRIPT'] as CodeLanguage[])
@@ -206,12 +209,11 @@ export function Workspace({
 
                 <div className="mb-4 flex flex-wrap items-center gap-2">
                   <Badge variant="outline" className={cn('rounded-full', diff.className)}>{diff.label}</Badge>
-                  <span className="flex items-center gap-1 text-xs text-muted-foreground" title="Learners who solved this">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> {problem.solvedCount.toLocaleString()} solved
-                  </span>
-                  <span className="flex items-center gap-1 text-xs text-muted-foreground" title="Learners who attempted this">
-                    <Users className="h-3.5 w-3.5" /> {problem.attemptCount.toLocaleString()} attempted
-                  </span>
+                  {stats && (
+                    <Suspense fallback={<StatsPlaceholder />}>
+                      <ProblemStatsBadges statsPromise={stats} />
+                    </Suspense>
+                  )}
                   {problem.tags.length > 0 && (
                     <button onClick={() => revealHelp('topics')} className="flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground hover:text-foreground">
                       <Tags className="h-3.5 w-3.5" /> Topics
@@ -359,6 +361,28 @@ export function Workspace({
         </ResizablePanel>
       </ResizablePanelGroup>
     </div>
+  )
+}
+
+function ProblemStatsBadges({ statsPromise }: { statsPromise: Promise<ProblemStats> }) {
+  const { solvedCount, attemptCount } = use(statsPromise)
+  return (
+    <>
+      <span className="flex items-center gap-1 text-xs text-muted-foreground" title="Learners who solved this">
+        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> {solvedCount.toLocaleString()} solved
+      </span>
+      <span className="flex items-center gap-1 text-xs text-muted-foreground" title="Learners who attempted this">
+        <Users className="h-3.5 w-3.5" /> {attemptCount.toLocaleString()} attempted
+      </span>
+    </>
+  )
+}
+
+function StatsPlaceholder() {
+  return (
+    <span className="flex items-center gap-1 text-xs text-muted-foreground/50">
+      <CheckCircle2 className="h-3.5 w-3.5" /> … solved
+    </span>
   )
 }
 

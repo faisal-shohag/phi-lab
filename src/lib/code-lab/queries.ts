@@ -73,6 +73,10 @@ export interface LearnerProblem {
   /** Visible sample cases only — hidden cases and the solution never ship. */
   sampleCases: VisibleCase[]
   solved: boolean
+}
+
+/** Cosmetic solve/attempt counts, streamed in after the workspace paints. */
+export interface ProblemStats {
   /** Distinct learners who have solved this problem. */
   solvedCount: number
   /** Distinct learners who have submitted at least once. */
@@ -111,13 +115,10 @@ export async function buildLearnerProblem(
     .filter((c) => !c.hidden)
     .map((c) => ({ id: c.id, args: c.args, expected: c.expected, expectedStdout: c.expectedStdout }))
 
-  const [solved, solvedCount, attemptRows] = await Promise.all([
-    isSolved(userId, p.id),
-    // One XpEvent per (user, problem) by the unique constraint, so a plain count
-    // is the distinct-solver count.
-    prisma.xpEvent.count({ where: { reason: CODE_LAB_SOLVED_REASON, sourceId: p.id } }),
-    prisma.codeSubmission.findMany({ where: { problemId: p.id }, distinct: ['userId'], select: { userId: true } }),
-  ])
+  // Only the cheap per-user solved lookup is on the critical path; the aggregate
+  // solve/attempt counts are streamed separately via getProblemStats so they
+  // never block the editor from painting.
+  const solved = await isSolved(userId, p.id)
 
   return {
     id: p.id,
@@ -137,9 +138,21 @@ export async function buildLearnerProblem(
     xp: p.xp,
     sampleCases,
     solved,
-    solvedCount,
-    attemptCount: attemptRows.length,
   }
+}
+
+/**
+ * Aggregate solver/attempt counts for the problem header. Deliberately separate
+ * from buildLearnerProblem so the workspace can render before these resolve.
+ */
+export async function getProblemStats(problemId: string): Promise<ProblemStats> {
+  const [solvedCount, attemptRows] = await Promise.all([
+    // One XpEvent per (user, problem) by the unique constraint, so a plain count
+    // is the distinct-solver count.
+    prisma.xpEvent.count({ where: { reason: CODE_LAB_SOLVED_REASON, sourceId: problemId } }),
+    prisma.codeSubmission.findMany({ where: { problemId }, distinct: ['userId'], select: { userId: true } }),
+  ])
+  return { solvedCount, attemptCount: attemptRows.length }
 }
 
 export interface SubmissionListItem {
