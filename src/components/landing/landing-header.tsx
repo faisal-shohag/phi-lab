@@ -7,6 +7,7 @@ import { UserMenu } from '@/components/auth/user-menu'
 import { XpBadge } from '@/components/gamification/xp-badge'
 import { Logo } from '@/components/brand/logo'
 import { Button } from '@/components/ui/button'
+import { Brain } from 'lucide-react'
 
 // In-page anchors, plus Hive which is a real route rather than a section.
 const NAV_LINKS = [
@@ -50,6 +51,13 @@ export function LandingHeader() {
               className="size-4 select-none transition-transform group-hover:scale-110"
             />
             Hive
+          </Link>
+          <Link
+            href="/brain"
+            className="group inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <Brain className="size-4 transition-transform group-hover:scale-110" />
+            Brain
           </Link>
         </nav>
 

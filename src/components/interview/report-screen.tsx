@@ -1,19 +1,22 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Sparkles, TrendingUp, ThumbsUp, Lightbulb, RotateCcw, Repeat } from 'lucide-react'
+import { Sparkles, TrendingUp, ThumbsUp, Lightbulb, RotateCcw, Repeat, CheckCircle2, Circle } from 'lucide-react'
 import type { InterviewReport } from '@/lib/interview/report-types'
 import { topicById, levelById, type LevelId } from '@/lib/interview/topics'
 import { Button } from '@/components/ui/button'
 import {
   Accordion, AccordionItem, AccordionTrigger, AccordionContent,
 } from '@/components/ui/accordion'
+import { AudioReplay } from '@/components/interview/audio-replay'
 import { cn } from '@/lib/utils'
 
 interface ReportScreenProps {
   report: InterviewReport
   topic: string | null
   level: LevelId | null
+  /** Session ID — when provided, audio replay is shown if available. */
+  sessionId?: string | null
   /** Omit both actions for a read-only history view. */
   onNew?: () => void
   onRetry?: () => void
@@ -79,7 +82,7 @@ function SubScore({ label, value }: { label: string; value: number }) {
   )
 }
 
-export function ReportScreen({ report, topic, level, onNew, onRetry }: ReportScreenProps) {
+export function ReportScreen({ report, topic, level, sessionId, onNew, onRetry }: ReportScreenProps) {
   const topicLabel = topicById(topic ?? '')?.label ?? topic ?? ''
   const levelLabel = levelById(level ?? 'medium')?.label ?? level ?? ''
 
@@ -108,6 +111,41 @@ export function ReportScreen({ report, topic, level, onNew, onRetry }: ReportScr
         <SubScore label="Technical depth" value={report.scores.technicalDepth} />
         <SubScore label="Accuracy" value={report.scores.accuracy} />
       </div>
+
+      {/* Subtopic coverage */}
+      {report.subtopicCoverage && report.subtopicCoverage.length > 0 && (
+        <div className="mt-4 rounded-2xl border-2 border-border bg-card p-5 shadow-sm">
+          <h3 className="mb-3 text-sm font-semibold">Subtopic Coverage</h3>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {report.subtopicCoverage.map((st) => (
+              <div
+                key={st.id}
+                className={cn(
+                  'flex items-center justify-between rounded-lg px-3 py-2 text-sm transition-colors',
+                  st.covered ? 'bg-emerald-50 dark:bg-emerald-950/30' : 'bg-muted/50',
+                )}
+              >
+                <span className="flex items-center gap-2">
+                  {st.covered ? (
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+                  ) : (
+                    <Circle className="h-4 w-4 shrink-0 text-muted-foreground/40" />
+                  )}
+                  <span className={cn(!st.covered && 'text-muted-foreground')}>{st.label}</span>
+                </span>
+                {st.covered && (
+                  <span className={cn('ml-2 font-mono text-xs font-semibold', scoreColor(st.rating, 10))}>
+                    {st.rating}/10
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            {report.subtopicCoverage.filter((s) => s.covered).length} of {report.subtopicCoverage.length} subtopics covered
+          </p>
+        </div>
+      )}
 
       {/* Strengths / improvements */}
       {(report.strengths.length > 0 || report.improvements.length > 0) && (
@@ -160,6 +198,9 @@ export function ReportScreen({ report, topic, level, onNew, onRetry }: ReportScr
           </Accordion>
         </div>
       )}
+
+      {/* Audio Replay */}
+      {sessionId && <AudioReplay sessionId={sessionId} className="mt-4" />}
 
       {/* Suggestions */}
       {report.suggestions.length > 0 && (

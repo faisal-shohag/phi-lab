@@ -49,7 +49,7 @@ export default async function InterviewReportPage(
 
       <main>
         {report && session.status === 'COMPLETED' ? (
-          <ReportScreen report={report} topic={session.topic} level={session.level as LevelId} />
+          <ReportScreen report={report} topic={session.topic} level={session.level as LevelId} sessionId={session.id} />
         ) : (
           <div className="mx-auto flex max-w-md flex-col items-center gap-4 px-4 py-16 text-center">
             <p className="text-lg font-semibold">

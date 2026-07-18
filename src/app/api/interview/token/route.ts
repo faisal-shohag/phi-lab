@@ -53,6 +53,7 @@ export async function POST(request: Request) {
   let pressure: PressureId = 'neutral'
   let language: LanguageId = 'en'
   let characterId = 'nova'
+  let subtopicIds: string[] = []
   let resumeSessionId: string | undefined
   let resumeHandle: string | undefined
   try {
@@ -62,6 +63,7 @@ export async function POST(request: Request) {
     if (typeof body?.pressure === 'string') pressure = body.pressure as PressureId
     if (typeof body?.language === 'string') language = body.language as LanguageId
     if (typeof body?.characterId === 'string') characterId = body.characterId
+    if (Array.isArray(body?.subtopicIds)) subtopicIds = body.subtopicIds.filter((id: unknown) => typeof id === 'string')
     if (typeof body?.resumeSessionId === 'string') resumeSessionId = body.resumeSessionId
     if (typeof body?.resumeHandle === 'string') resumeHandle = body.resumeHandle
   } catch {
@@ -140,6 +142,7 @@ export async function POST(request: Request) {
             personaName,
             pressure,
             roundSeconds,
+            subtopicIds,
           }),
         },
       },

@@ -71,7 +71,6 @@ model User {
   pathProgress      PathProgress[]
   dailyQuests       DailyQuest[]
   weeklyPlans       WeeklyPlan[]
-
   @@unique([email])
   @@index([suspendedAt])
   @@map("user")
@@ -898,3 +897,6 @@ model AdminAuditLog {
   @@index([actorId, createdAt])
   @@map("admin_audit_log")
 }
+
+// ── Second Brain: AI-Powered Personal Knowledge Base ─────────────────────
+

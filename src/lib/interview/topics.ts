@@ -3,6 +3,7 @@
 // report route can import it.
 import { spokenDuration } from '@/lib/labs/duration'
 import { endingInstruction } from '@/lib/labs/end-session'
+import { subtopicLabels, subtopicsForTopic } from '@/lib/interview/questions'
 
 export type LevelId = 'easy' | 'medium' | 'expert'
 
@@ -164,6 +165,8 @@ export interface SystemInstructionOptions {
   personaName?: string
   /** Interviewer demeanor / stress level. Defaults to 'neutral'. */
   pressure?: PressureId
+  /** Selected subtopic IDs — when provided, only these subtopics are covered. */
+  subtopicIds?: string[]
 }
 
 // Demeanor instructions injected per pressure level. `neutral` adds nothing —
@@ -200,6 +203,7 @@ export function buildSystemInstruction(
     personaName,
     pressure = 'neutral',
     roundSeconds = ROUND_SECONDS,
+    subtopicIds,
   } = opts
   const topic = topicById(topicId)
   const lvl = levelById(level)
@@ -219,6 +223,29 @@ export function buildSystemInstruction(
     '- Do not read out code character by character; keep it verbal and natural.',
     `- Progressively probe deeper within the ${levelLabel} level as the candidate answers.`,
   ]
+
+  // Inject subtopic guidance so the interviewer covers breadth, not just depth.
+  const allSubtopicLabels = subtopicLabels(topicId)
+  if (allSubtopicLabels.length > 0) {
+    // If specific subtopics were selected, only list those.
+    let subtopicText: string
+    if (subtopicIds && subtopicIds.length > 0) {
+      const topicData = subtopicsForTopic(topicId)
+      const selectedLabels = topicData
+        ? topicData.subtopics.filter((s) => subtopicIds.includes(s.id)).map((s) => s.label)
+        : subtopicIds
+      subtopicText = selectedLabels.length > 0
+        ? selectedLabels.join(', ')
+        : allSubtopicLabels.join(', ')
+    } else {
+      subtopicText = allSubtopicLabels.join(', ')
+    }
+    lines.push(
+      '',
+      `The key sub-topics within ${topicLabel} are: ${subtopicText}.`,
+      'Aim to touch on as many of these areas as the round allows. After the candidate answers a question on one area, shift to a different sub-topic for the next question unless a follow-up is clearly needed.',
+    )
+  }
 
   lines.push(...PRESSURE_INSTRUCTIONS[pressure])
 
