@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { Cpu, Mic, GraduationCap, Grid2x2Check, Languages, LifeBuoy, ArrowRight } from 'lucide-react'
+import { Cpu, Mic, GraduationCap, Grid2x2Check, Languages, LifeBuoy, Code2, ArrowRight } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Reveal, RevealItem } from './reveal'
@@ -15,6 +15,7 @@ const FEYNMAN_CHIPS = ['Teach it out loud', 'AI asks the naive questions', 'Clar
 const ENGLISH_CHIPS = ['5 work scenarios', 'Voice roleplay', 'Say-it-better fixes', 'Fluency score']
 const SUPPORT_CHIPS = ['Live voice help', 'Coding · mental · guidance', 'Share your screen', '10-minute sessions']
 const PIXEL_CHIPS = ['27 challenges · navbars → whole pages', 'Scored in a real browser', 'Diff & slide compare', 'Unlock the run']
+const CODE_CHIPS = ['JS & TS problems', 'Server-graded in QuickJS', 'Timed contests + leaderboard', 'XP & badges']
 
 const CODE_LINES = ['function push(stack, v) {', '  stack.push(v)', '  return stack', '}']
 
@@ -231,8 +232,40 @@ function PixelMockup() {
   )
 }
 
+const SOLUTION_LINES = ['function twoSum(nums, t) {', '  const seen = new Map()', '  // …', '}']
+
+/**
+ * The Code Lab card shows the loop that defines it: you write a solution, the
+ * server runs every hidden case, a verdict comes back. The test bar filling to
+ * "Accepted · 12/12" is that verdict landing.
+ */
+function CodeMockup() {
+  const animated = useAmbientMotion()
+  return (
+    <div className="mt-5 space-y-2 rounded-lg border border-border bg-slate-950 p-3 shadow-inner">
+      <div className="font-mono text-[11px] leading-6 text-slate-300">
+        {SOLUTION_LINES.map((line, i) => (
+          <div key={i} className="pl-1">
+            <span className="text-slate-600">{i + 1}</span> <span className="ml-2">{line}</span>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 pt-1">
+        <div className="h-1 flex-1 overflow-hidden rounded-full bg-slate-800">
+          <motion.div
+            className="h-full rounded-full bg-linear-to-r from-emerald-500 to-teal-400"
+            animate={animated ? { width: ['15%', '100%', '15%'] } : { width: '100%' }}
+            transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+          />
+        </div>
+        <span className="font-mono text-[9px] font-bold text-emerald-400 tabular-nums">Accepted · 12/12</span>
+      </div>
+    </div>
+  )
+}
+
 interface LabCardProps {
-  accent: 'amber' | 'violet' | 'indigo' | 'cyan' | 'rose' | 'pink'
+  accent: 'amber' | 'violet' | 'indigo' | 'cyan' | 'rose' | 'pink' | 'emerald'
   icon: React.ReactNode
   title: string
   description: string
@@ -259,7 +292,9 @@ function LabCard({ accent, icon, title, description, chips, href, mockup }: LabC
                   ? 'border-border hover:border-rose-400'
                   : accent === 'pink'
                     ? 'border-border hover:border-pink-400'
-                    : 'border-border hover:border-violet-400',
+                    : accent === 'emerald'
+                      ? 'border-border hover:border-emerald-400'
+                      : 'border-border hover:border-violet-400',
         )}
       >
         <div
@@ -276,7 +311,9 @@ function LabCard({ accent, icon, title, description, chips, href, mockup }: LabC
                     : accent === 'pink'
                       ? // The lab's own logo gradient, so the card and the header agree.
                         'bg-linear-to-br from-pink-500 via-fuchsia-500 to-violet-600'
-                      : 'bg-linear-to-br from-violet-500 to-fuchsia-600',
+                      : accent === 'emerald'
+                        ? 'bg-linear-to-br from-emerald-500 to-teal-600'
+                        : 'bg-linear-to-br from-violet-500 to-fuchsia-600',
           )}
         >
           {icon}
@@ -309,7 +346,7 @@ export function LabsShowcase() {
   return (
     <section id="labs" className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
       <Reveal className="text-center">
-        <h2 className="text-2xl font-bold sm:text-3xl">Six labs. One goal: make it click.</h2>
+        <h2 className="text-2xl font-bold sm:text-3xl">Seven labs. One goal: make it click.</h2>
         <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground sm:text-base">
           Every concept here is something you run, watch, or say — not just something you read.
         </p>
@@ -336,6 +373,15 @@ export function LabsShowcase() {
           mockup={<PixelMockup />}
         />
 
+        <LabCard
+          accent="emerald"
+          icon={<Code2 className="h-5 w-5" />}
+          title="Code Lab"
+          description="Solve JavaScript and TypeScript problems in a real editor. Your code is graded on the server against hidden cases — then enter timed contests and climb the leaderboard."
+          chips={CODE_CHIPS}
+          href="/labs/code-lab"
+          mockup={<CodeMockup />}
+        />
 
         <LabCard
           accent="violet"
