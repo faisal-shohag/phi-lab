@@ -33,6 +33,8 @@ export interface BadgeStats {
   /** Challenge Mode: total staked-challenge wins, and a Hard one-shot win. */
   challengeWins: number
   wonHardOneshot: boolean
+  /** Code Lab: distinct problems solved (first accept), any difficulty. */
+  codeProblemsSolved: number
 }
 
 export interface BadgeDef {
@@ -305,6 +307,47 @@ export const BADGES: BadgeDef[] = [
     icon: 'Flame',
     tint: 'from-amber-400 to-rose-600',
     earned: (s) => s.wonHardOneshot,
+  },
+  // ── Code Lab ────────────────────────────────────────────────────────────
+  {
+    id: 'code-solver-20',
+    label: 'Problem Solver',
+    description: 'Solve 20 Code Lab problems.',
+    icon: 'Code2',
+    tint: 'from-sky-400 to-blue-600',
+    earned: (s) => s.codeProblemsSolved >= 20,
+  },
+  {
+    id: 'code-solver-50',
+    label: 'Grinder',
+    description: 'Solve 50 Code Lab problems.',
+    icon: 'Braces',
+    tint: 'from-indigo-400 to-violet-600',
+    earned: (s) => s.codeProblemsSolved >= 50,
+  },
+  {
+    id: 'code-centurion',
+    label: 'Centurion',
+    description: 'Solve 100 Code Lab problems.',
+    icon: 'Terminal',
+    tint: 'from-violet-400 to-fuchsia-600',
+    earned: (s) => s.codeProblemsSolved >= 100,
+  },
+  {
+    id: 'code-veteran',
+    label: 'Veteran Coder',
+    description: 'Solve 150 Code Lab problems.',
+    icon: 'Cpu',
+    tint: 'from-fuchsia-400 to-pink-600',
+    earned: (s) => s.codeProblemsSolved >= 150,
+  },
+  {
+    id: 'code-legend',
+    label: 'Code Legend',
+    description: 'Solve 200 Code Lab problems.',
+    icon: 'Trophy',
+    tint: 'from-amber-300 to-orange-600',
+    earned: (s) => s.codeProblemsSolved >= 200,
   },
 ]
 

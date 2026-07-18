@@ -71,6 +71,7 @@ model User {
   pathProgress      PathProgress[]
   dailyQuests       DailyQuest[]
   weeklyPlans       WeeklyPlan[]
+
   @@unique([email])
   @@index([suspendedAt])
   @@map("user")
@@ -106,6 +107,162 @@ model ChallengeAttempt {
 
   @@index([userId, status])
   @@map("challenge_attempt")
+}
+
+// ── Code Lab: LeetCode-style problem solving ───────────────────────────────
+// Curated JS/TS problems. Like ChallengeAttempt and QuizSession, the graded
+// contract (`tests`, `solutionJs`) is SERVER-ONLY: the API strips hidden cases
+// and the reference solution on the way out, and re-grades every submit in a
+// QuickJS sandbox on the way in (src/lib/code-lab/grade-qjs.ts). "Run" in the
+// browser worker is a convenience preview against visible cases only; XP is
+// paid strictly on the server verdict.
+enum ProblemDifficulty {
+  EASY
+  MEDIUM
+  HARD
+  EXTRA_HARD
+}
+
+enum ProblemType {
+  // Tests call fnName(...args) and deep-compare the return value.
+  FUNCTION_RETURN
+  // Tests compare captured console.log output. When fnName is null the whole
+  // script runs once per case; otherwise fnName(...args) is called first.
+  CONSOLE_OUTPUT
+}
+
+enum CodeLanguage {
+  JAVASCRIPT
+  TYPESCRIPT
+}
+
+enum SubmissionVerdict {
+  ACCEPTED
+  WRONG_ANSWER
+  RUNTIME_ERROR
+  TIME_LIMIT
+  // The TS submission failed to transpile server-side.
+  COMPILE_ERROR
+}
+
+model Problem {
+  id          String            @id @default(cuid())
+  slug        String            @unique
+  title       String
+  difficulty  ProblemDifficulty
+  type        ProblemType
+  description String // markdown
+  constraints String[]          @default([])
+  hints       String[]          @default([])
+  tags        String[]          @default([])
+  // Entry point. Null only for program-style CONSOLE_OUTPUT problems.
+  fnName      String?
+  // Which languages a learner may solve this in. Set at authoring time.
+  languages   CodeLanguage[]    @default([JAVASCRIPT, TYPESCRIPT])
+  starterJs   String
+  starterTs   String
+  // SERVER-ONLY reference solution (JS). Validates tests at authoring time and
+  // is shown to admins only — never to learners.
+  solutionJs  String
+  // SERVER-ONLY: { cases: [{ id, hidden, args?, expected?, expectedStdout? }] }.
+  // See src/lib/code-lab/types.ts for the exact shape.
+  tests       Json
+  // First-accept XP award; defaulted from difficulty at create, editable.
+  xp          Int
+  published   Boolean           @default(false)
+  order       Int               @default(0)
+  // Admin author. No FK so the problem outlives the account (like AdminSetting).
+  createdById String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  submissions CodeSubmission[]
+  // Set when this problem is part of a contest (1:1). While that contest hasn't
+  // finished the problem is hidden from the main list.
+  contestProblem ContestProblem?
+
+  @@index([published, order])
+  @@index([published, difficulty])
+  @@map("problem")
+}
+
+// Every graded submit, with the code that produced it. Same rationale as
+// PixelSubmission: the XpEvent ledger only records the FIRST accept, so it can't
+// answer "what did I try". Not a source of truth for XP/solved — those derive
+// from XpEvent (award reason "code_lab_solved") and this table can be pruned.
+model CodeSubmission {
+  id          String            @id @default(cuid())
+  userId      String
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problemId   String
+  problem     Problem           @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  language    CodeLanguage
+  code        String
+  verdict     SubmissionVerdict
+  passedCount Int
+  totalCount  Int
+  // Per-VISIBLE-case results (CaseResult[]) captured at grade time, so the
+  // submissions view can replay this run's actual input/output. Hidden cases are
+  // never stored here. Null on old rows / compile errors.
+  results     Json?
+  // Wall clock of the grading run.
+  runtimeMs   Int?
+  // First runtime/compile error message, truncated. Null on a clean run.
+  error       String?
+  // Set when this submit was made inside a running contest. Contest scoring
+  // derives from these rows. SetNull so pruning a contest keeps the attempt.
+  contestId   String?
+  contest     Contest?          @relation(fields: [contestId], references: [id], onDelete: SetNull)
+  createdAt   DateTime          @default(now())
+
+  @@index([userId, problemId, createdAt])
+  @@index([userId, verdict, createdAt])
+  @@index([problemId, verdict])
+  @@index([contestId, verdict])
+  @@map("code_submission")
+}
+
+// A timed programming contest. Status (upcoming/running/finished) is derived
+// from now vs startsAt/endsAt — never stored. Problems attached via
+// ContestProblem are hidden from the main Code Lab list until endsAt passes.
+model Contest {
+  id          String           @id @default(cuid())
+  slug        String           @unique
+  title       String
+  description String // markdown
+  // Displayed author (a MENTOR/ADMIN). FK so we can show name/avatar.
+  authorId    String
+  author      User             @relation("ContestAuthor", fields: [authorId], references: [id])
+  startsAt    DateTime
+  endsAt      DateTime
+  // Draft contests are hidden from learners entirely.
+  published   Boolean          @default(false)
+  // Admin who built it. No FK — mirrors Problem.createdById.
+  createdById String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  problems    ContestProblem[]
+  submissions CodeSubmission[]
+
+  @@index([published, startsAt])
+  @@index([published, endsAt])
+  @@map("contest")
+}
+
+// Join between a contest and a problem, carrying the contest-specific points and
+// display order. problemId is unique: a problem belongs to at most one contest.
+model ContestProblem {
+  id        String  @id @default(cuid())
+  contestId String
+  contest   Contest @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  problemId String  @unique
+  problem   Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  // Contest score awarded for solving this problem.
+  points    Int
+  order     Int     @default(0)
+
+  @@unique([contestId, problemId])
+  @@index([contestId, order])
+  @@map("contest_problem")
 }
 
 // Append-only ledger of every XP grant. `reason` + `sourceId` are unique per
@@ -638,6 +795,32 @@ model WeeklyPlan {
   @@map("weekly_plan")
 }
 
+// ── The Quiz Lab ──────────────────────────────────────────────────────────
+// AI-generated quizzes on chosen topics. One row per generated quiz. Owned by
+// the Quiz Lab feature (feature/quiz-lab); this schema mirrors that DB shape.
+model QuizSession {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topics        String[]
+  difficulty    String   @default("beginner")
+  questionCount Int      @default(10)
+  /** SERVER-ONLY question set (with answers), stripped before sending to client. */
+  questions     Json     @default("[]")
+  /** Learner's chosen option index per item, set on submit. */
+  answers       Json?
+  /** 0-100, set on submit. */
+  score         Int?
+  total         Int      @default(0)
+  xpAwarded     Int      @default(0)
+  status        String   @default("in_progress")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@map("quiz_session")
+}
+
 // ── AI telemetry ──────────────────────────────────────────────────────────
 // One row per call to an AI provider — successes and failures alike. Append-only,
 // like XpEvent. This is the source of truth for the admin dashboard: who was
@@ -671,10 +854,6 @@ enum AiFeature {
    * The Path: weekly re-plan + report card.
    */
   PATH
-  /**
-   * Quiz Generator: AI-generated multiple-choice quizzes.
-   */
-  QUIZ
 }
 
 /**
@@ -707,10 +886,6 @@ enum AiTask {
    * The Path: re-plan the coming week and write the report card.
    */
   PLAN
-  /**
-   * Quiz Generator: generate MCQ questions.
-   */
-  GENERATE_QUIZ
 }
 
 /**

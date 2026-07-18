@@ -11,6 +11,8 @@ import { getProfileInfo } from '@/lib/profile/info'
 import { initials } from '@/lib/profile/format'
 import type { ProfileCardData } from '@/lib/profile/draw-profile-card'
 import { Achievements } from '@/components/gamification/achievements'
+import { CodeLabSection } from '@/components/profile/code-lab-section'
+import { getCodeLabProfileStats } from '@/lib/code-lab/queries'
 import { ProfileHero } from '@/components/profile/profile-hero'
 import { ProfileCompletion } from '@/components/profile/profile-completion'
 import { CareerCard } from '@/components/profile/career-card'
@@ -25,10 +27,11 @@ export default async function ProfilePage() {
   const user = await requireUser()
   if (!user) redirect('/sign-in?redirect=/profile')
 
-  const [profile, info, dbUser] = await Promise.all([
+  const [profile, info, dbUser, codeLab] = await Promise.all([
     getProfile(user.id),
     getProfileInfo(user.id),
     prisma.user.findUnique({ where: { id: user.id }, select: { createdAt: true } }),
+    getCodeLabProfileStats(user.id),
   ])
 
   const level = levelInfo(profile.xp)
@@ -84,6 +87,8 @@ export default async function ProfilePage() {
         <ProfileCompletion info={info} />
 
         <CareerCard info={info} isOwner />
+
+        <CodeLabSection stats={codeLab} isOwner />
 
         <Achievements
           initialXp={profile.xp}

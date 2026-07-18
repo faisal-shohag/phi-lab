@@ -146,6 +146,7 @@ export async function getStats(userId: string): Promise<BadgeStats> {
   const bugsFixed = new Set<string>()
   let challengeWins = 0
   let wonHardOneshot = false
+  const codeProblems = new Set<string>()
 
   for (const e of events) {
     const meta = (e.meta ?? {}) as Record<string, unknown>
@@ -160,6 +161,8 @@ export async function getStats(userId: string): Promise<BadgeStats> {
     } else if (e.reason === 'viz_challenge_win') {
       challengeWins++
       if (meta.difficulty === 'hard' && meta.mode === 'oneshot') wonHardOneshot = true
+    } else if (e.reason === 'code_lab_solved') {
+      if (typeof meta.problemId === 'string') codeProblems.add(meta.problemId)
     } else if (e.reason === 'interview_completed') {
       interviewsCompleted++
       const score = typeof meta.score === 'number' ? meta.score : 0
@@ -220,6 +223,7 @@ export async function getStats(userId: string): Promise<BadgeStats> {
     bugsFixed: bugsFixed.size,
     challengeWins,
     wonHardOneshot,
+    codeProblemsSolved: codeProblems.size,
   }
 }
 
