@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { History, LogOut, Loader2, ShieldCheck, UserRound, Brain } from 'lucide-react'
+import { History, LogOut, Loader2, ShieldCheck, UserRound } from 'lucide-react'
 import { authClient } from '@/lib/auth-client'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -130,12 +130,6 @@ export function UserMenu({ showHistory = true }: UserMenuProps) {
           <Link href="/profile">
             <UserRound className="h-4 w-4" />
             Profile
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link href="/brain">
-            <Brain className="h-4 w-4" />
-            My Brain
           </Link>
         </DropdownMenuItem>
         {showHistory && (
