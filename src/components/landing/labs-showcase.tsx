@@ -1,8 +1,9 @@
-'use client'
+"use client";
 
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { Cpu, Mic, GraduationCap, Grid2x2Check, Languages, LifeBuoy, Code2, Brain, ArrowRight } from 'lucide-react'
+import { Cpu, Mic, GraduationCap, Grid2x2Check, Languages, LifeBuoy, Code2, Brain, ArrowRight, ClipboardList, ExternalLink } from 'lucide-react'
+import { FaGithub } from 'react-icons/fa'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Reveal, RevealItem } from './reveal'
@@ -62,47 +63,64 @@ const SUPPORT_CHIPS = ['Live voice help', 'Coding · mental · guidance', 'Share
 const PIXEL_CHIPS = ['27 challenges · navbars → whole pages', 'Scored in a real browser', 'Diff & slide compare', 'Unlock the run']
 const CODE_CHIPS = ['JS & TS problems', 'Server-graded in QuickJS', 'Timed contests + leaderboard', 'XP & badges']
 const QUIZ_CHIPS = ['9 topics · HTML → MongoDB', 'Gemini-powered', '3 difficulty levels', 'XP rewards']
+const REVIEWER_CHIPS = ['Github + live link', 'Structure + naming', 'SEO + accessibility', 'Performance feedback']
 
-const CODE_LINES = ['function push(stack, v) {', '  stack.push(v)', '  return stack', '}']
+const CODE_LINES = [
+  "function push(stack, v) {",
+  "  stack.push(v)",
+  "  return stack",
+  "}",
+];
 
 function JsMotionMockup() {
-  const animated = useAmbientMotion()
+  const animated = useAmbientMotion();
   return (
     <div className="mt-5 flex items-stretch gap-3 rounded-lg border border-border bg-slate-950 p-3 shadow-inner">
       <div className="relative flex-1 font-mono text-[11px] leading-6 text-slate-300">
         {animated && (
           <motion.div
             className="absolute inset-x-0 h-6 rounded bg-amber-500/20"
-            animate={{ top: ['0%', '25%', '50%', '75%', '0%'] }}
-            transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut', times: [0, 0.25, 0.5, 0.75, 1] }}
+            animate={{ top: ["0%", "25%", "50%", "75%", "0%"] }}
+            transition={{
+              duration: 5,
+              repeat: Infinity,
+              ease: "easeInOut",
+              times: [0, 0.25, 0.5, 0.75, 1],
+            }}
           />
         )}
         {CODE_LINES.map((line, i) => (
           <div key={i} className="relative pl-1">
-            <span className="text-slate-600">{i + 1}</span> <span className="ml-2">{line}</span>
+            <span className="text-slate-600">{i + 1}</span>{" "}
+            <span className="ml-2">{line}</span>
           </div>
         ))}
       </div>
       <div className="flex w-24 shrink-0 flex-col justify-end gap-1.5">
-        {['push()', 'main()'].map((frame, i) => (
+        {["push()", "main()"].map((frame, i) => (
           <motion.div
             key={frame}
             className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-center font-mono text-[10px] text-amber-300"
             animate={animated ? { opacity: [0.4, 1, 0.4] } : undefined}
-            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut', delay: i * 0.8 }}
+            transition={{
+              duration: 3,
+              repeat: Infinity,
+              ease: "easeInOut",
+              delay: i * 0.8,
+            }}
           >
             {frame}
           </motion.div>
         ))}
       </div>
     </div>
-  )
+  );
 }
 
 function InterviewMockup() {
-  const animated = useAmbientMotion()
-  const r = 26
-  const c = 2 * Math.PI * r
+  const animated = useAmbientMotion();
+  const r = 26;
+  const c = 2 * Math.PI * r;
 
   return (
     <div className="mt-5 flex items-center gap-4 rounded-lg border border-border bg-muted/40 p-3">
@@ -112,7 +130,7 @@ function InterviewMockup() {
           <motion.div
             className="absolute h-14 w-14 rounded-full border-2 border-violet-400/40"
             animate={{ scale: [1, 1.3, 1], opacity: [0.3, 0, 0.3] }}
-            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
           />
         )}
       </div>
@@ -127,23 +145,35 @@ function InterviewMockup() {
       </div>
 
       <svg width={64} height={64} className="-rotate-90 shrink-0">
-        <circle cx={32} cy={32} r={r} fill="none" strokeWidth={5} className="stroke-muted" />
+        <circle
+          cx={32}
+          cy={32}
+          r={r}
+          fill="none"
+          strokeWidth={5}
+          className="stroke-muted"
+        />
         <motion.circle
-          cx={32} cy={32} r={r} fill="none" strokeWidth={5} strokeLinecap="round"
+          cx={32}
+          cy={32}
+          r={r}
+          fill="none"
+          strokeWidth={5}
+          strokeLinecap="round"
           className="stroke-emerald-500"
           strokeDasharray={c}
           initial={{ strokeDashoffset: c }}
           whileInView={{ strokeDashoffset: c * 0.14 }}
           viewport={{ once: true }}
-          transition={{ duration: 1, ease: 'easeOut', delay: 0.3 }}
+          transition={{ duration: 1, ease: "easeOut", delay: 0.3 }}
         />
       </svg>
     </div>
-  )
+  );
 }
 
 function FeynmanMockup() {
-  const animated = useAmbientMotion()
+  const animated = useAmbientMotion();
   return (
     <div className="mt-5 flex items-center gap-4 rounded-lg border border-border bg-muted/40 p-3">
       <div className="relative flex h-16 w-16 shrink-0 items-center justify-center">
@@ -152,7 +182,7 @@ function FeynmanMockup() {
           <motion.div
             className="absolute h-14 w-14 rounded-full border-2 border-indigo-400/40"
             animate={{ scale: [1, 1.3, 1], opacity: [0.3, 0, 0.3] }}
-            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
           />
         )}
       </div>
@@ -165,11 +195,11 @@ function FeynmanMockup() {
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 function EnglishMockup() {
-  const animated = useAmbientMotion()
+  const animated = useAmbientMotion();
   return (
     <div className="mt-5 flex items-center gap-4 rounded-lg border border-border bg-muted/40 p-3">
       <div className="relative flex h-16 w-16 shrink-0 items-center justify-center">
@@ -178,7 +208,7 @@ function EnglishMockup() {
           <motion.div
             className="absolute h-14 w-14 rounded-full border-2 border-sky-400/40"
             animate={{ scale: [1, 1.3, 1], opacity: [0.3, 0, 0.3] }}
-            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
           />
         )}
       </div>
@@ -191,11 +221,11 @@ function EnglishMockup() {
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 function SupportMockup() {
-  const animated = useAmbientMotion()
+  const animated = useAmbientMotion();
   return (
     <div className="mt-5 flex items-center gap-4 rounded-lg border border-border bg-muted/40 p-3">
       <div className="relative flex h-16 w-16 shrink-0 items-center justify-center">
@@ -204,7 +234,7 @@ function SupportMockup() {
           <motion.div
             className="absolute h-14 w-14 rounded-full border-2 border-rose-400/40"
             animate={{ scale: [1, 1.3, 1], opacity: [0.3, 0, 0.3] }}
-            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
           />
         )}
       </div>
@@ -217,7 +247,73 @@ function SupportMockup() {
         </div>
       </div>
     </div>
-  )
+  );
+}
+
+function ReviewerMockup() {
+  const animated = useAmbientMotion();
+  return (
+    <div className="mt-5 rounded-lg border border-border bg-gradient-to-br from-emerald-950 via-slate-950 to-slate-900 p-3 shadow-inner">
+      <div className="space-y-2 rounded-xl border border-white/10 bg-white/5 p-3">
+        <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-emerald-200/80">
+          <FaGithub className="h-3.5 w-3.5" />
+          github
+        </div>
+        <div className="rounded-md bg-white/95 px-2 py-1.5 text-[10px] text-slate-900">
+          github.com/phi-lab/project-reviewer-demo
+        </div>
+        <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-cyan-200/80">
+          <ExternalLink className="h-3.5 w-3.5" />
+          live link
+        </div>
+        <div className="rounded-md bg-white/95 px-2 py-1.5 text-[10px] text-slate-900">
+          project-reviewer-demo.vercel.app
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-end justify-between gap-3 rounded-xl border border-emerald-400/20 bg-emerald-500/10 p-3">
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-200/70">
+            overall
+          </p>
+          <div className="mt-1 flex items-end gap-1.5 text-emerald-100">
+            <span className="text-3xl font-black tabular-nums">7.8</span>
+            <span className="pb-1 text-xs">/10</span>
+          </div>
+        </div>
+        <div className="space-y-1 text-right text-[10px] text-emerald-100/85">
+          <div className="rounded-full border border-emerald-300/30 bg-emerald-300/10 px-2 py-1">
+            Folder structure
+          </div>
+          <div className="rounded-full border border-emerald-300/30 bg-emerald-300/10 px-2 py-1">
+            Accessibility
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 space-y-2 text-[10px] text-slate-200/85">
+        {[
+          "Too many prop drillings.",
+          "Missing loading states.",
+          "No error handling.",
+        ].map((line, i) => (
+          <motion.div
+            key={line}
+            className="rounded-md border border-white/10 bg-white/5 px-2 py-1.5"
+            animate={animated ? { x: [0, 2, 0] } : undefined}
+            transition={{
+              duration: 2.6,
+              repeat: Infinity,
+              delay: i * 0.2,
+              ease: "easeInOut",
+            }}
+          >
+            {line}
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -229,14 +325,16 @@ function SupportMockup() {
  * only honest way to say that in a card.
  */
 function PixelMockup() {
-  const animated = useAmbientMotion()
+  const animated = useAmbientMotion();
   return (
     <div className="mt-5 space-y-2 rounded-lg border border-border bg-slate-950 p-3 shadow-inner">
-      <p className="font-mono text-[9px] uppercase tracking-widest text-slate-500">target</p>
+      <p className="font-mono text-[9px] uppercase tracking-widest text-slate-500">
+        target
+      </p>
       <div className="flex items-center gap-2 rounded bg-white px-2 py-1.5">
         <span className="text-[9px] font-bold text-slate-900">phi</span>
         <span className="ml-auto flex gap-1.5">
-          {['Labs', 'Hive'].map((t) => (
+          {["Labs", "Hive"].map((t) => (
             <span key={t} className="text-[8px] text-slate-500">
               {t}
             </span>
@@ -244,11 +342,13 @@ function PixelMockup() {
         </span>
       </div>
 
-      <p className="font-mono text-[9px] uppercase tracking-widest text-slate-500">yours</p>
+      <p className="font-mono text-[9px] uppercase tracking-widest text-slate-500">
+        yours
+      </p>
       <div className="relative flex items-center gap-2 overflow-hidden rounded bg-white px-2 py-1.5">
         <span className="text-[9px] font-bold text-slate-900">phi</span>
         <span className="ml-auto flex gap-1.5">
-          {['Labs', 'Hive'].map((t) => (
+          {["Labs", "Hive"].map((t) => (
             <span key={t} className="text-[8px] text-slate-500">
               {t}
             </span>
@@ -258,8 +358,8 @@ function PixelMockup() {
           // The wipe: your build resolving onto the target, over and over.
           <motion.div
             className="absolute inset-y-0 right-0 bg-pink-500/20"
-            animate={{ width: ['70%', '0%', '70%'] }}
-            transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+            animate={{ width: ["70%", "0%", "70%"] }}
+            transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
           />
         )}
       </div>
@@ -268,14 +368,18 @@ function PixelMockup() {
         <div className="h-1 flex-1 overflow-hidden rounded-full bg-slate-800">
           <motion.div
             className="h-full rounded-full bg-linear-to-r from-pink-500 to-emerald-400"
-            animate={animated ? { width: ['30%', '100%', '30%'] } : { width: '100%' }}
-            transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+            animate={
+              animated ? { width: ["30%", "100%", "30%"] } : { width: "100%" }
+            }
+            transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
           />
         </div>
-        <span className="font-mono text-[9px] font-bold text-emerald-400 tabular-nums">100%</span>
+        <span className="font-mono text-[9px] font-bold text-emerald-400 tabular-nums">
+          100%
+        </span>
       </div>
     </div>
-  )
+  );
 }
 
 const SOLUTION_LINES = ['function twoSum(nums, t) {', '  const seen = new Map()', '  // …', '}']
@@ -360,7 +464,7 @@ function LabCard({ accent, icon, title, description, chips, href, mockup }: LabC
     <RevealItem>
       <motion.div
         whileHover={{ y: -4 }}
-        transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+        transition={{ type: "spring", stiffness: 300, damping: 22 }}
         className={cn(
           'group relative flex h-full flex-col rounded-2xl border border-border bg-card p-5 shadow-sm transition-colors duration-300 sm:p-6',
           a.ring,
@@ -389,7 +493,9 @@ function LabCard({ accent, icon, title, description, chips, href, mockup }: LabC
           {icon}
         </div>
         <h3 className="mt-4 text-lg font-bold">{title}</h3>
-        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{description}</p>
+        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+          {description}
+        </p>
 
         <div className="mt-4 flex flex-wrap gap-1.5">
           {chips.map((chip) => (
@@ -409,7 +515,7 @@ function LabCard({ accent, icon, title, description, chips, href, mockup }: LabC
         </Button>
       </motion.div>
     </RevealItem>
-  )
+  );
 }
 
 export function LabsShowcase() {
@@ -417,7 +523,7 @@ export function LabsShowcase() {
     <section id="labs" className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
       <SectionHeading
         eyebrow="The Labs"
-        title="Eight labs. One goal: make it click."
+        title="Nine labs. One goal: make it click."
         subtitle="Every concept here is something you run, watch, or say — not just something you read."
       />
 
@@ -499,7 +605,17 @@ export function LabsShowcase() {
           href="/labs/quiz"
           mockup={<QuizMockup />}
         />
+
+        <LabCard
+          accent="emerald"
+          icon={<ClipboardList className="h-5 w-5" />}
+          title="Project Reviewer Lab"
+          description="Submit a GitHub repo and live link, then get an AI-style review across structure, naming, responsiveness, SEO, accessibility, and performance."
+          chips={REVIEWER_CHIPS}
+          href="/labs/project-reviewer"
+          mockup={<ReviewerMockup />}
+        />
       </Reveal>
     </section>
-  )
+  );
 }
